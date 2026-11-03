@@ -1,0 +1,55 @@
+:root {
+	--accent: #4a7a4a;
+	--bg: #faf9f6;
+	--fg: #2a2a2a;
+	--muted: #8a8a8a;
+}
+body {
+	font-family: Georgia, "Times New Roman", serif;
+	background: var(--bg);
+	color: var(--fg);
+	margin: 0;
+	line-height: 1.7;
+}
+.transcript {
+	max-width: 680px;
+	margin: 0 auto;
+	padding: 24px 16px 80px;
+}
+.message { margin-bottom: 22px; }
+.message .label {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 11px;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+.message .text { margin: 4px 0 0; }
+.message.user .text {
+	border-left: 3px solid #d0d0d0;
+	padding-left: 14px;
+}
+.overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(250, 249, 246, 0.95);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+.overlay.hidden { display: none; }
+.overlay-card {
+	text-align: center;
+	padding: 32px;
+}
+.overlay-card input {
+	font: inherit;
+	padding: 6px 10px;
+	margin-right: 8px;
+}
+.overlay-card button {
+	font: inherit;
+	padding: 6px 14px;
+	cursor: pointer;
+}

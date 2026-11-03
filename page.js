@@ -157,8 +157,13 @@ let pollActive = false;
 function appendMessage(m) {
 	const pollCard = document.getElementById("poll-card");
 	const jump = document.getElementById("jump-latest");
-	// Insert before the poll card so the card always trails the conversation.
-	pollCard.insertAdjacentHTML("beforebegin", formatMessage(m));
+	// Anchor the poll card where it was opened: once a poll (or its reveal)
+	// is rendered, new messages go after it; with no poll, append at the end.
+	if (pollCard.innerHTML.trim() !== "") {
+		pollCard.insertAdjacentHTML("afterend", formatMessage(m));
+	} else {
+		pollCard.insertAdjacentHTML("beforebegin", formatMessage(m));
+	}
 	// The page never auto-scrolls (design rule); if the reader is now behind,
 	// show the jump control. The scroll listener re-hides it at the bottom.
 	const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;

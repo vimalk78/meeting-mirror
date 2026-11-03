@@ -12,9 +12,11 @@ shows only a fragment, and readers go at different speeds. Meeting Mirror is
 a pi extension that serves the live conversation as a web page each teammate
 opens in their own browser, plus planning-poker-style voting.
 
-The page is display-only for humans. Nothing flows back into the pi session;
-the moderator remains the sole person talking to the model and relays vote
-outcomes to it verbally.
+The page is display-only for humans: nothing flows from the page into the
+pi session. The moderator remains the sole person talking to the model.
+On `/reveal`, the extension itself records the tally as a user message in
+the session (see Non-goals), so the model learns the outcome without any
+page-driven input.
 
 ## Goals
 
@@ -29,7 +31,10 @@ outcomes to it verbally.
 
 ## Non-goals
 
-- No feedback path into the pi session (no injected user messages).
+- No feedback path from the page into the pi session. Exception (changed
+  2026-11-04, at the moderator's request): `/reveal` records the tally as a
+  user message in the session so the model knows the outcome and the page
+  shows it in the conversation flow.
 - No persistence: poll state and served session state live in memory only.
 - No authentication beyond the username and (for the relay transport) a
   session token.

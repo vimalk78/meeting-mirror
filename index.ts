@@ -6,6 +6,32 @@ import { LocalServer } from "./transport.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
 
+/** Human-readable poll result, used for the terminal notify and the
+ * injected session message. */
+export function formatPollResult(
+	poll: Poll | null,
+	votes: { username: string; choice: string; remark: string }[],
+): string {
+	if (!poll) return "No poll result.";
+	const counts = new Map<string, string[]>();
+	for (const v of votes) {
+		const names = counts.get(v.choice) ?? [];
+		names.push(v.username);
+		counts.set(v.choice, names);
+	}
+	const lines = [`[Poll result] ${poll.question}`];
+	for (const o of poll.options) {
+		const names = counts.get(o.key) ?? [];
+		lines.push(`${o.key} — ${o.label}: ${names.length} vote${names.length === 1 ? "" : "s"}${names.length ? ` (${names.join(", ")})` : ""}`);
+	}
+	const remarks = votes.filter((v) => v.remark.trim() !== "");
+	if (remarks.length > 0) {
+		lines.push("Remarks:");
+		for (const v of remarks) lines.push(`- ${v.username} (${v.choice}): ${v.remark}`);
+	}
+	return lines.join("\n");
+}
+
 export default function meetingMirror(pi: ExtensionAPI): void {
 	let state: MirrorState | null = null;
 	let server: LocalServer | null = null;
@@ -86,10 +112,18 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("reveal", {
-		description: "Reveal the current poll's votes on the Meeting Mirror page",
+		description: "Reveal the current poll's votes on the Meeting Mirror page and in the session",
 		handler: async (_args, ctx) => {
 			try {
-				ensureState().reveal();
+				const events = ensureState().reveal();
+				const revealEvent = events.find((e) => e.type === "poll_reveal");
+				if (revealEvent && revealEvent.type === "poll_reveal") {
+					const summary = formatPollResult(ensureState().getSnapshot().poll, revealEvent.votes);
+					ctx.ui.notify(summary, "info");
+					// Record the result as a user message so the session (and the
+					// page, via the normal relay) knows the outcome.
+					await pi.sendUserMessage(summary, { deliverAs: "followUp" });
+				}
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : "No poll is open.", "warning");
 			}

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { nthLastAssistant, isConversationMessage } from "./index-helpers.js";
 import { escapeHtml, renderMarkdown, renderTally, formatMessage } from "./page.js";
 import { resyncFromBranch } from "./index-helpers.js";
+import { formatPollResult } from "./index.js";
 import type { MirrorMessage } from "./state.js";
 
 const msgs: MirrorMessage[] = [
@@ -272,5 +273,31 @@ describe("resyncFromBranch", () => {
 		// second run over the same id-less branch must not duplicate
 		resyncFromBranch(noIds as never, seen, (m) => appended.push(m));
 		expect(appended).toHaveLength(2);
+	});
+});
+
+describe("formatPollResult", () => {
+	it("formats counts with voter names and attributed remarks", () => {
+		const poll = {
+			question: "Which approach?",
+			options: [
+				{ key: "A", label: "Local server" },
+				{ key: "B", label: "Relay" },
+			],
+		};
+		const votes = [
+			{ username: "alice", choice: "A", remark: "" },
+			{ username: "bob", choice: "A", remark: "" },
+			{ username: "kim", choice: "B", remark: "safer" },
+		];
+		const text = formatPollResult(poll, votes);
+		expect(text).toContain("[Poll result] Which approach?");
+		expect(text).toContain("A — Local server: 2 votes (alice, bob)");
+		expect(text).toContain("B — Relay: 1 vote (kim)");
+		expect(text).toContain("- kim (B): safer");
+	});
+
+	it("handles no poll and empty votes", () => {
+		expect(formatPollResult(null, [])).toBe("No poll result.");
 	});
 });

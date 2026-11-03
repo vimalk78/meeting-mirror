@@ -156,15 +156,12 @@ let pollActive = false;
 let currentSessionId = null;
 
 function appendMessage(m) {
-	const pollCard = document.getElementById("poll-card");
+	const transcript = document.getElementById("transcript");
 	const jump = document.getElementById("jump-latest");
-	// Anchor the poll card where it was opened: once a poll (or its reveal)
-	// is rendered, new messages go after it; with no poll, append at the end.
-	if (pollCard.innerHTML.trim() !== "") {
-		pollCard.insertAdjacentHTML("afterend", formatMessage(m));
-	} else {
-		pollCard.insertAdjacentHTML("beforebegin", formatMessage(m));
-	}
+	// Messages always append at the end of the transcript, in order. The poll
+	// card keeps its position (moved to the end when the poll opened), so new
+	// messages land after it — never between the card and earlier messages.
+	transcript.insertAdjacentHTML("beforeend", formatMessage(m));
 	// The page never auto-scrolls (design rule); if the reader is now behind,
 	// show the jump control. The scroll listener re-hides it at the bottom.
 	const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
@@ -172,6 +169,11 @@ function appendMessage(m) {
 }
 
 function renderPollCard(poll, initialCount = 0) {
+	// Anchor the card at the current end of the conversation: below the
+	// message that presented the options. Later messages append after it.
+	const transcript = document.getElementById("transcript");
+	const card = document.getElementById("poll-card");
+	transcript.appendChild(card);
 	const buttons = poll.options
 		.map((o) => `<button class="poll-option" data-key="${escapeHtml(o.key)}">${escapeHtml(o.key)} · ${escapeHtml(o.label)}</button>`)
 		.join("");

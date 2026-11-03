@@ -35,8 +35,8 @@ describe("parsePollArgs", () => {
 		expect(result.poll.options[2]?.label).toBe("three");
 	});
 
-	it("single segment without pipe → throws", () => {
-		expect(() => parsePollArgs("just a question")).toThrow(/pipe/i);
+	it("single segment without pipe → throws PollArgError naming valid forms", () => {
+		expect(() => parsePollArgs("just a question")).toThrow(/\/poll/);
 	});
 
 	it('"0" → throws', () => {

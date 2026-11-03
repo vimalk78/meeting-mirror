@@ -69,6 +69,21 @@ describe("MirrorState poll lifecycle", () => {
 		expect(() => s.castVote("u", "Z", "")).toThrow(/unknown/i);
 	});
 
+	it("castVote broadcasts vote_cast with the total vote count", () => {
+		const s = new MirrorState();
+		s.openPoll(poll);
+		const received: unknown[] = [];
+		s.subscribe((e) => received.push(e));
+		s.castVote("alice", "A", "");
+		s.castVote("bob", "B", "");
+		s.castVote("alice", "B", ""); // replace, count stays 2
+		expect(received).toEqual([
+			{ type: "vote_cast", count: 1 },
+			{ type: "vote_cast", count: 2 },
+			{ type: "vote_cast", count: 2 },
+		]);
+	});
+
 	it("castVote replaces an earlier vote by the same username", () => {
 		const s = new MirrorState();
 		s.openPoll(poll);

@@ -156,6 +156,20 @@ describe("LocalServer", () => {
 		expect(bad.status).toBe(400);
 	});
 
+	it("binds a non-loopback address by default so teammates can reach it", async () => {
+		const { base } = await start();
+		// base uses the display host; verify reachability on a real local IP
+		const { networkInterfaces } = await import("node:os");
+		const nets = networkInterfaces();
+		const lanIp = Object.values(nets)
+			.flat()
+			.find((n) => n && n.family === "IPv4" && !n.internal)?.address;
+		if (!lanIp) return; // no network besides loopback in this environment
+		const port = new URL(base).port;
+		const res = await fetch(`http://${lanIp}:${port}/`);
+		expect(res.status).toBe(200);
+	});
+
 	it("stop() closes the server", async () => {
 		const { base } = await start();
 		const s = server!;

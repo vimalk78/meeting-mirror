@@ -80,7 +80,6 @@ void formatTimestamp;
 // ---------------------------------------------------------------------------
 
 let username = null;
-let votesInCount = 0;
 let pollActive = false;
 
 function appendMessage(m) {
@@ -104,7 +103,6 @@ function renderPollCard(poll) {
 		<div class="poll-options">${buttons}</div>
 		<input id="poll-remark" class="poll-remark-input" type="text" maxlength="500" placeholder="Optional remark…">
 		<div class="poll-status" id="poll-status">0 votes in · hidden until reveal</div>`;
-	votesInCount = 0;
 	pollActive = true;
 	for (const btn of document.querySelectorAll(".poll-option")) {
 		btn.addEventListener("click", () => castVote(btn.dataset.key));
@@ -119,9 +117,6 @@ async function castVote(choice) {
 		body: JSON.stringify({ username, choice, remark: remarkEl ? remarkEl.value : "" }),
 	});
 	if (res.ok && pollActive) {
-		votesInCount++;
-		const status = document.getElementById("poll-status");
-		if (status) status.textContent = `${votesInCount} votes in · hidden until reveal`;
 		for (const btn of document.querySelectorAll(".poll-option")) {
 			btn.classList.toggle("selected", btn.dataset.key === choice);
 		}
@@ -158,6 +153,9 @@ function handleEvent(event) {
 		renderReveal(event.votes, lastPoll);
 	} else if (event.type === "poll_close") {
 		clearPollCard();
+	} else if (event.type === "vote_cast") {
+		const status = document.getElementById("poll-status");
+		if (status) status.textContent = `${event.count} votes in · hidden until reveal`;
 	}
 }
 

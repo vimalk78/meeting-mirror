@@ -19,7 +19,8 @@ export type MirrorEvent =
 	| { type: "transcript_delta"; message: MirrorMessage }
 	| { type: "poll_open"; poll: Poll }
 	| { type: "poll_reveal"; votes: VoteRecord[] }
-	| { type: "poll_close" };
+	| { type: "poll_close" }
+	| { type: "vote_cast"; count: number };
 
 export type MirrorSnapshot = {
 	messages: MirrorMessage[];
@@ -66,6 +67,7 @@ export class MirrorState {
 			throw new Error(`Unknown choice key: ${choice}`);
 		}
 		this.votes.set(username, { username, choice, remark: remark ?? "" });
+		this.emit({ type: "vote_cast", count: this.votes.size });
 	}
 
 	reveal(): MirrorEvent[] {

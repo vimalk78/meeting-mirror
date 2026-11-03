@@ -52,7 +52,7 @@ export class LocalServer implements Transport {
 		return new Promise((resolve, reject) => {
 			const server = createServer((req, res) => this.handle(req, res));
 			server.once("error", reject);
-			server.listen(port, this.opts.host ?? "127.0.0.1", () => {
+			server.listen(port, this.opts.host ?? "0.0.0.0", () => {
 				server.removeListener("error", reject);
 				this.server = server;
 				const addr = server.address();

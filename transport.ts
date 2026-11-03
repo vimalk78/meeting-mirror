@@ -102,7 +102,10 @@ export class LocalServer implements Transport {
 		try {
 			const content = readFileSync(join(HERE, name));
 			const ext = name.slice(name.lastIndexOf("."));
-			res.writeHead(200, { "content-type": MIME[ext] ?? "application/octet-stream" });
+			res.writeHead(200, {
+				"content-type": MIME[ext] ?? "application/octet-stream",
+				"cache-control": "no-cache",
+			});
 			res.end(content);
 		} catch {
 			res.writeHead(500, { "content-type": "text/plain" });

@@ -297,7 +297,15 @@ function initJumpLatest() {
 }
 
 if (typeof document !== "undefined") {
-	initIdentify();
+	document.getElementById("identity-chip").addEventListener("click", () => {
+		localStorage.removeItem("meeting-mirror-username");
+		localStorage.removeItem("meeting-mirror-token");
+		username = null;
+		voteToken = null;
+		updateIdentityChip();
+		showIdentifyOverlay();
+	});
+	initIdentify().then(updateIdentityChip);
 	initJumpLatest();
 	keyboardShortcuts();
 	connectEvents();

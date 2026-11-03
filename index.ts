@@ -22,7 +22,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	const resync = (ctx: { sessionManager: { getBranch: () => BranchEntry[] } }): void => {
 		if (!state) return;
 		resyncFromBranch(ctx.sessionManager.getBranch(), seenEntries, (m) =>
-			state!.appendMessage({ ...m, timestamp: Date.now() }),
+			state!.appendMessage({ ...m, timestamp: m.timestamp ?? Date.now() }),
 		);
 	};
 

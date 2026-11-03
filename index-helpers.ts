@@ -24,6 +24,7 @@ type ContentBlock = {
 export type SessionMessage = {
 	role?: string;
 	content?: unknown;
+	timestamp?: number;
 };
 
 function textOf(content: unknown): string {
@@ -73,7 +74,7 @@ export type BranchEntry = {
 export function resyncFromBranch(
 	branch: BranchEntry[],
 	seen: Set<string>,
-	append: (message: { role: "user" | "assistant"; text: string }) => void,
+	append: (message: { role: "user" | "assistant"; text: string; timestamp?: number }) => void,
 ): boolean {
 	let appended = false;
 	for (let i = 0; i < branch.length; i++) {
@@ -83,7 +84,11 @@ export function resyncFromBranch(
 		seen.add(key);
 		if (entry.type !== "message" || !entry.message) continue;
 		if (isConversationMessage(entry.message)) {
-			append({ role: entry.message.role === "user" ? "user" : "assistant", text: messageText(entry.message) });
+			append({
+				role: entry.message.role === "user" ? "user" : "assistant",
+				text: messageText(entry.message),
+				timestamp: entry.message.timestamp,
+			});
 			appended = true;
 		}
 	}

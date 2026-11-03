@@ -231,6 +231,40 @@ async function initIdentify() {
 	const overlay = document.getElementById("identify-overlay");
 	const input = document.getElementById("username-input");
 	const button = document.getElementById("username-button");
+
+	// Bind the join handlers FIRST: the eager re-identify path below
+	// returns early, and the overlay must still work afterwards when the
+	// user clicks "switch name" on the identity chip.
+	const join = async () => {
+		const name = input.value.trim();
+		if (!name) return;
+		try {
+			const res = await fetch("/identify", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ username: name }),
+			});
+			if (res.ok) {
+				const { token } = await res.json();
+				localStorage.setItem("meeting-mirror-username", name);
+				localStorage.setItem("meeting-mirror-token", token);
+				username = name;
+				voteToken = token;
+				overlay.classList.add("hidden");
+				updateIdentityChip();
+			} else {
+				const body = await res.json().catch(() => ({}));
+				alert(body.error ? `Could not join: ${body.error}` : "Could not join.");
+			}
+		} catch {
+			alert("Could not join: server unreachable.");
+		}
+	};
+	button.addEventListener("click", join);
+	input.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") join();
+	});
+
 	const storedName = localStorage.getItem("meeting-mirror-username");
 	if (storedName) {
 		// Re-identify on load: server restarts (new pi session, /reload)
@@ -257,31 +291,6 @@ async function initIdentify() {
 	username = null;
 	voteToken = null;
 	overlay.classList.remove("hidden");
-	const join = async () => {
-		const name = input.value.trim();
-		if (!name) return;
-		const res = await fetch("/identify", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ username: name }),
-		});
-		if (res.ok) {
-			const { token } = await res.json();
-			localStorage.setItem("meeting-mirror-username", name);
-			localStorage.setItem("meeting-mirror-token", token);
-			username = name;
-			voteToken = token;
-			overlay.classList.add("hidden");
-			updateIdentityChip();
-		} else {
-			const body = await res.json().catch(() => ({}));
-			alert(body.error ? `Could not join: ${body.error}` : "Could not join.");
-		}
-	};
-	button.addEventListener("click", join);
-	input.addEventListener("keydown", (e) => {
-		if (e.key === "Enter") join();
-	});
 }
 
 function initJumpLatest() {

@@ -283,6 +283,23 @@ describe("LocalServer", () => {
 		expect(events.votes[0]!.remark.length).toBe(500);
 	});
 
+	it("accepts a vote whose username has stray whitespace", async () => {
+		const { state, base } = await start();
+		state.openPoll(poll);
+		const idRes = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "alice" }),
+		});
+		const { token } = await idRes.json();
+		const res = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token, username: " alice ", choice: "A", remark: "" }),
+		});
+		expect(res.status).toBe(200);
+	});
+
 	it("stop() closes the server", async () => {
 		const { base } = await start();
 		const s = server!;
@@ -295,7 +312,7 @@ describe("LocalServer identify cap", () => {
 	it("rejects identifies beyond 100 tokens", async () => {
 		const { base } = await start();
 		let lastStatus = 200;
-		for (let i = 0; i < 102; i++) {
+		for (let i = 0; i < 502; i++) {
 			const res = await fetch(`${base}/identify`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },

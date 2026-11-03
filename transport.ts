@@ -155,14 +155,15 @@ export class LocalServer implements Transport {
 					res.end(JSON.stringify({ error: "username and choice required" }));
 					return;
 				}
-				if (this.tokens.get(token) !== username) {
+				const name = username.trim();
+				if (this.tokens.get(token) !== name) {
 					res.writeHead(403, { "content-type": "application/json" });
 					res.end(JSON.stringify({ error: "token does not match username" }));
 					return;
 				}
 				try {
 					const trimmedRemark = typeof remark === "string" ? remark.slice(0, 500) : "";
-					this.state.castVote(username, choice, trimmedRemark);
+					this.state.castVote(name, choice, trimmedRemark);
 					res.writeHead(200, { "content-type": "application/json" });
 					res.end(JSON.stringify({ ok: true }));
 				} catch (err) {
@@ -196,7 +197,7 @@ export class LocalServer implements Transport {
 					return;
 				}
 				const name = username.trim().slice(0, 40);
-				if (this.tokens.size >= 100) {
+				if (this.tokens.size >= 500) {
 					res.writeHead(503, { "content-type": "application/json" });
 					res.end(JSON.stringify({ error: "too many identities this session" }));
 					return;

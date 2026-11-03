@@ -171,6 +171,16 @@ describe("resyncFromBranch", () => {
 		expect(appended).toEqual([{ role: "assistant", text: "different reply" }]);
 	});
 
+	it("preserves the original message timestamp", () => {
+		const seen = new Set<string>();
+		const appended: { text: string; timestamp?: number }[] = [];
+		const branch = [
+			{ id: "1", type: "message", message: { role: "assistant", content: "old reply", timestamp: 12345 } },
+		];
+		resyncFromBranch(branch as never, seen, (m) => appended.push({ text: m.text, timestamp: m.timestamp }));
+		expect(appended[0]).toEqual({ text: "old reply", timestamp: 12345 });
+	});
+
 	it("tracks entries by id when present, by index otherwise", () => {
 		const seen = new Set<string>();
 		const appended: unknown[] = [];

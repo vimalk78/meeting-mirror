@@ -80,9 +80,11 @@ let pollActive = false;
 
 function appendMessage(m) {
 	const transcript = document.getElementById("transcript");
+	const pollCard = document.getElementById("poll-card");
 	const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
 	const jump = document.getElementById("jump-latest");
-	transcript.insertAdjacentHTML("beforeend", formatMessage(m));
+	// Insert before the poll card so the card always trails the conversation.
+	pollCard.insertAdjacentHTML("beforebegin", formatMessage(m));
 	if (atBottom) {
 		window.scrollTo(0, document.body.scrollHeight);
 	} else if (jump) {

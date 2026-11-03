@@ -131,6 +131,7 @@ async function castVote(choice) {
 			localStorage.removeItem("meeting-mirror-token");
 			username = null;
 			voteToken = null;
+			updateIdentityChip();
 			if (status) status.textContent = "Please identify again to vote.";
 			showIdentifyOverlay();
 			return;
@@ -138,6 +139,16 @@ async function castVote(choice) {
 		if (status) status.textContent = `Vote rejected: ${body.error || res.status}`;
 	} catch (err) {
 		if (status) status.textContent = "Vote failed: network error";
+	}
+}
+
+function updateIdentityChip() {
+	const chip = document.getElementById("identity-chip");
+	if (username) {
+		chip.textContent = `${username} · switch name`;
+		chip.classList.remove("hidden");
+	} else {
+		chip.classList.add("hidden");
 	}
 }
 
@@ -236,6 +247,7 @@ async function initIdentify() {
 				username = storedName;
 				voteToken = token;
 				overlay.classList.add("hidden");
+				updateIdentityChip();
 				return;
 			}
 		} catch {
@@ -258,7 +270,9 @@ async function initIdentify() {
 			localStorage.setItem("meeting-mirror-username", name);
 			localStorage.setItem("meeting-mirror-token", token);
 			username = name;
+			voteToken = token;
 			overlay.classList.add("hidden");
+			updateIdentityChip();
 		} else {
 			const body = await res.json().catch(() => ({}));
 			alert(body.error ? `Could not join: ${body.error}` : "Could not join.");

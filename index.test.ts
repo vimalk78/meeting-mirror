@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { nthLastAssistant, isConversationMessage } from "./index-helpers.js";
+import { escapeHtml, renderMarkdown, renderTally, formatMessage } from "./page.js";
 import type { MirrorMessage } from "./state.js";
 
 const msgs: MirrorMessage[] = [
@@ -64,5 +65,72 @@ describe("isConversationMessage", () => {
 				],
 			}),
 		).toBe(true);
+	});
+});
+
+describe("escapeHtml", () => {
+	it("escapes script tags into entities", () => {
+		expect(escapeHtml("<script>alert(1)</script>")).toBe(
+			"&lt;script&gt;alert(1)&lt;/script&gt;",
+		);
+	});
+});
+
+describe("renderMarkdown", () => {
+	it("renders bold and code, escaping HTML first", () => {
+		const html = renderMarkdown("**bold** and `code`");
+		expect(html).toContain("<strong>bold</strong>");
+		expect(html).toContain("<code>code</code>");
+	});
+
+	it("raw script tags stay escaped", () => {
+		const html = renderMarkdown("hello <script>alert(1)</script>");
+		expect(html).not.toContain("<script>");
+		expect(html).toContain("&lt;script&gt;");
+	});
+
+	it("paragraphs become separate <p> blocks", () => {
+		const html = renderMarkdown("one\n\ntwo");
+		expect(html).toContain("<p>one</p>");
+		expect(html).toContain("<p>two</p>");
+	});
+});
+
+describe("renderTally", () => {
+	it("renders one bar per option with proportional widths, voter names, and attributed remarks", () => {
+		const options = [
+			{ key: "A", label: "First" },
+			{ key: "B", label: "Second" },
+		];
+		const votes = [
+			{ username: "alice", choice: "A", remark: "cheap" },
+			{ username: "bob", choice: "A", remark: "" },
+			{ username: "kim", choice: "B", remark: "safer" },
+		];
+		const html = renderTally(votes, options);
+		expect(html).toContain("First");
+		expect(html).toContain("Second");
+		expect(html).toContain("width: 100%"); // A: 2 votes, max option
+		expect(html).toContain("width: 50%"); // B: 1 vote, half of max
+		expect(html).toContain("alice");
+		expect(html).toContain("bob");
+		expect(html).toContain("kim");
+		expect(html).toContain("cheap");
+		expect(html).toContain("safer");
+	});
+
+	it("escapes remark text", () => {
+		const html = renderTally([{ username: "x", choice: "A", remark: "<b>bold</b>" }], [{ key: "A", label: "o" }]);
+		expect(html).not.toContain("<b>bold</b>");
+	});
+});
+
+describe("formatMessage", () => {
+	it("includes role label, timestamp, and escaped markdown text", () => {
+		const m: MirrorMessage = { role: "assistant", text: "**hi** <script>", timestamp: 0 };
+		const html = formatMessage(m);
+		expect(html).toContain("PI");
+		expect(html).toContain("<strong>hi</strong>");
+		expect(html).not.toContain("<script>");
 	});
 });

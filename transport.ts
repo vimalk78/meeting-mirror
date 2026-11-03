@@ -2,6 +2,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { MirrorState, MirrorEvent } from "./state.js";
 
 export interface Transport {
@@ -22,6 +23,7 @@ export class LocalServer implements Transport {
 	private unsubscribe: (() => void) | null = null;
 	private sseClients = new Set<ServerResponse>();
 	private chosenPort = 0;
+	private tokens = new Map<string, string>(); // token → username
 
 	constructor(
 		private state: MirrorState,
@@ -127,16 +129,37 @@ export class LocalServer implements Transport {
 	}
 
 	private handleVote(req: IncomingMessage, res: ServerResponse): void {
+		if (!isJsonContentType(req)) {
+			res.writeHead(415, { "content-type": "application/json" });
+			res.end(JSON.stringify({ error: "content-type must be application/json" }));
+			return;
+		}
 		readJson(req)
 			.then((body) => {
-				const { username, choice, remark } = body as { username?: string; choice?: string; remark?: string };
+				const { token, username, choice, remark } = body as {
+					token?: string;
+					username?: string;
+					choice?: string;
+					remark?: string;
+				};
+				if (typeof token !== "string" || token === "") {
+					res.writeHead(401, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "token required (identify first)" }));
+					return;
+				}
 				if (typeof username !== "string" || username.trim() === "" || typeof choice !== "string") {
 					res.writeHead(400, { "content-type": "application/json" });
 					res.end(JSON.stringify({ error: "username and choice required" }));
 					return;
 				}
+				if (this.tokens.get(token) !== username) {
+					res.writeHead(403, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "token does not match username" }));
+					return;
+				}
 				try {
-					this.state.castVote(username.trim(), choice, typeof remark === "string" ? remark : "");
+					const trimmedRemark = typeof remark === "string" ? remark.slice(0, 500) : "";
+					this.state.castVote(username, choice, trimmedRemark);
 					res.writeHead(200, { "content-type": "application/json" });
 					res.end(JSON.stringify({ ok: true }));
 				} catch (err) {
@@ -144,13 +167,23 @@ export class LocalServer implements Transport {
 					res.end(JSON.stringify({ error: err instanceof Error ? err.message : "vote rejected" }));
 				}
 			})
-			.catch(() => {
-				res.writeHead(400, { "content-type": "application/json" });
-				res.end(JSON.stringify({ error: "invalid JSON body" }));
+			.catch((err) => {
+				if (err instanceof PayloadTooLargeError) {
+					res.writeHead(413, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "body too large" }), () => req.destroy());
+				} else {
+					res.writeHead(400, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "invalid JSON body" }));
+				}
 			});
 	}
 
 	private handleIdentify(req: IncomingMessage, res: ServerResponse): void {
+		if (!isJsonContentType(req)) {
+			res.writeHead(415, { "content-type": "application/json" });
+			res.end(JSON.stringify({ error: "content-type must be application/json" }));
+			return;
+		}
 		readJson(req)
 			.then((body) => {
 				const { username } = body as { username?: string };
@@ -159,20 +192,48 @@ export class LocalServer implements Transport {
 					res.end(JSON.stringify({ error: "username required" }));
 					return;
 				}
-				res.writeHead(204);
-				res.end();
+				const name = username.trim().slice(0, 40);
+				if ([...this.tokens.values()].includes(name)) {
+					res.writeHead(409, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "username already taken in this session" }));
+					return;
+				}
+				const token = randomUUID();
+				this.tokens.set(token, name);
+				res.writeHead(200, { "content-type": "application/json" });
+				res.end(JSON.stringify({ token }));
 			})
-			.catch(() => {
-				res.writeHead(400, { "content-type": "application/json" });
-				res.end(JSON.stringify({ error: "invalid JSON body" }));
+			.catch((err) => {
+				if (err instanceof PayloadTooLargeError) {
+					res.writeHead(413, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "body too large" }), () => req.destroy());
+				} else {
+					res.writeHead(400, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "invalid JSON body" }));
+				}
 			});
 	}
+}
+
+class PayloadTooLargeError extends Error {}
+
+function isJsonContentType(req: IncomingMessage): boolean {
+	return (req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json");
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {
 	return new Promise((resolve, reject) => {
 		let data = "";
-		req.on("data", (chunk) => (data += chunk));
+		let size = 0;
+		req.on("data", (chunk) => {
+			size += chunk.length;
+			if (size > 64 * 1024) {
+				req.pause();
+				reject(new PayloadTooLargeError());
+				return;
+			}
+			data += chunk;
+		});
 		req.on("end", () => {
 			try {
 				resolve(JSON.parse(data));

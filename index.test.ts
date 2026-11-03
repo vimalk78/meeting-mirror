@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { nthLastAssistant, isConversationMessage } from "./index-helpers.js";
 import { escapeHtml, renderMarkdown, renderTally, formatMessage } from "./page.js";
+import { resyncFromBranch } from "./index-helpers.js";
 import type { MirrorMessage } from "./state.js";
 
 const msgs: MirrorMessage[] = [
@@ -132,5 +133,52 @@ describe("formatMessage", () => {
 		expect(html).toContain("PI");
 		expect(html).toContain("<strong>hi</strong>");
 		expect(html).not.toContain("<script>");
+	});
+});
+
+describe("resyncFromBranch", () => {
+	type Entry = { id?: string; type?: string; message?: { role?: string; content?: unknown } };
+	const user = (id: string, text: string): Entry => ({ id, type: "message", message: { role: "user", content: text } });
+	const assistant = (id: string, text: string): Entry => ({ id, type: "message", message: { role: "assistant", content: text } });
+
+	it("appends unseen conversation entries and skips non-message and command entries", () => {
+		const seen = new Set<string>();
+		const appended: { role: string; text: string }[] = [];
+		const branch = [user("1", "hi"), { id: "2", type: "compaction" }, assistant("3", "hello"), user("4", "/poll")];
+		const changed = resyncFromBranch(branch as never, seen, (m) => appended.push({ role: m.role, text: m.text }));
+		expect(changed).toBe(true);
+		expect(appended).toEqual([
+			{ role: "user", text: "hi" },
+			{ role: "assistant", text: "hello" },
+		]);
+		expect([...seen]).toEqual(["1", "2", "3", "4"]);
+	});
+
+	it("is a no-op when the branch has no unseen entries", () => {
+		const seen = new Set(["1"]);
+		const appended: unknown[] = [];
+		const changed = resyncFromBranch([user("1", "hi")] as never, seen, (m) => appended.push(m));
+		expect(changed).toBe(false);
+		expect(appended).toEqual([]);
+	});
+
+	it("handles a rewound or forked branch without duplicates", () => {
+		const seen = new Set<string>(["1", "2"]);
+		const appended: { role: string; text: string }[] = [];
+		// fork: same prefix, divergent new entry with a new id
+		const branch = [user("1", "hi"), assistant("2b", "different reply")];
+		resyncFromBranch(branch as never, seen, (m) => appended.push({ role: m.role, text: m.text }));
+		expect(appended).toEqual([{ role: "assistant", text: "different reply" }]);
+	});
+
+	it("tracks entries by id when present, by index otherwise", () => {
+		const seen = new Set<string>();
+		const appended: unknown[] = [];
+		const noIds = [user("", "a"), user("", "b")];
+		resyncFromBranch(noIds as never, seen, (m) => appended.push(m));
+		expect(appended).toHaveLength(2);
+		// second run over the same id-less branch must not duplicate
+		resyncFromBranch(noIds as never, seen, (m) => appended.push(m));
+		expect(appended).toHaveLength(2);
 	});
 });

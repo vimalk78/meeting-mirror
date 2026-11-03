@@ -42,6 +42,9 @@ function parsePipeSyntax(s: string): Poll {
 	if (validLabels.length !== optionLabels.length || validLabels.length < 2) {
 		throw new PollArgError("Provide at least two non-empty options: /poll question | option | option");
 	}
+	if (validLabels.length > 8) {
+		throw new PollArgError("A poll supports at most 8 options.");
+	}
 	const keys = ["A", "B", "C", "D", "E", "F", "G", "H"];
 	return {
 		question,

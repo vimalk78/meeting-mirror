@@ -57,3 +57,35 @@ export function isConversationMessage(message: SessionMessage): boolean {
 	if (role === "user" && text.startsWith("/")) return false;
 	return true;
 }
+
+export type BranchEntry = {
+	id?: string;
+	type?: string;
+	message?: SessionMessage;
+};
+
+/**
+ * Append every unseen conversation entry from a session branch to the mirror
+ * state. Tracks entries by id when present (so a rewound or forked branch
+ * never duplicates), falling back to positional keys for id-less entries.
+ * Returns true when anything was appended.
+ */
+export function resyncFromBranch(
+	branch: BranchEntry[],
+	seen: Set<string>,
+	append: (message: { role: "user" | "assistant"; text: string }) => void,
+): boolean {
+	let appended = false;
+	for (let i = 0; i < branch.length; i++) {
+		const entry = branch[i]!;
+		const key = typeof entry.id === "string" && entry.id !== "" ? entry.id : `#${i}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		if (entry.type !== "message" || !entry.message) continue;
+		if (isConversationMessage(entry.message)) {
+			append({ role: entry.message.role === "user" ? "user" : "assistant", text: messageText(entry.message) });
+			appended = true;
+		}
+	}
+	return appended;
+}

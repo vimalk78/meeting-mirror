@@ -129,10 +129,10 @@ describe("MirrorState poll lifecycle", () => {
 		expect(s.getSnapshot().poll).toEqual(poll);
 	});
 
-	it("castVote after reveal throws", () => {
+	it("castVote after reveal throws a message naming the reveal", () => {
 		const s = new MirrorState();
 		s.openPoll(poll);
 		s.reveal();
-		expect(() => s.castVote("u", "A", "")).toThrow(/no poll|revealed/i);
+		expect(() => s.castVote("u", "A", "")).toThrow(/already been revealed/i);
 	});
 });

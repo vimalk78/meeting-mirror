@@ -1,9 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { uuidv7 } from "@earendil-works/pi-ai";
-import { MirrorState, type MirrorMessage, type Poll } from "./state.js";
+import { networkInterfaces } from "node:os";
+import { MirrorState, type Poll } from "./state.js";
 import { LocalServer } from "./transport.js";
-import { parsePollArgs, extractPoll, PollArgError, ExtractionError } from "./extract.js";
-import { nthLastAssistant, isConversationMessage, messageText } from "./index-helpers.js";
+import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
+import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
 
 export default function meetingMirror(pi: ExtensionAPI): void {
 	let state: MirrorState | null = null;
@@ -14,37 +15,38 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		return state;
 	};
 
-	const toMirrorMessage = (message: { role?: string; content?: unknown; timestamp?: number }): MirrorMessage => ({
-		role: message.role === "user" ? "user" : "assistant",
-		text: messageText(message),
-		timestamp: message.timestamp ?? Date.now(),
-	});
-
 	// Resync the page state from the session branch, appending conversation
-	// messages we have not yet processed.
-	let processedEntries = 0;
-	const resync = (ctx: { sessionManager: { getBranch: () => Array<{ type?: string; message?: { role?: string; content?: unknown; timestamp?: number } }> } }): void => {
+	// entries we have not yet seen. Tracks entry ids, so a rewound or forked
+	// branch never duplicates or silently stops updating.
+	const seenEntries = new Set<string>();
+	const resync = (ctx: { sessionManager: { getBranch: () => BranchEntry[] } }): void => {
 		if (!state) return;
-		const branch = ctx.sessionManager.getBranch();
-		for (let i = processedEntries; i < branch.length; i++) {
-			const entry = branch[i]!;
-			if (entry.type !== "message" || !entry.message) continue;
-			if (isConversationMessage(entry.message)) {
-				state.appendMessage(toMirrorMessage(entry.message));
+		resyncFromBranch(ctx.sessionManager.getBranch(), seenEntries, (m) =>
+			state!.appendMessage({ ...m, timestamp: Date.now() }),
+		);
+	};
+
+	/** First non-internal IPv4 address of this machine, for the notify URL. */
+	const lanAddress = (): string | null => {
+		for (const nets of Object.values(networkInterfaces())) {
+			for (const net of nets ?? []) {
+				if (net.family === "IPv4" && !net.internal) return net.address;
 			}
 		}
-		processedEntries = branch.length;
+		return null;
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
 		state = new MirrorState();
-		processedEntries = 0;
+		seenEntries.clear();
 		resync(ctx);
 		server = new LocalServer(state);
 		try {
 			await server.start();
-			ctx.ui.notify(`Meeting Mirror page: ${server.url}`, "info");
+			const lan = lanAddress();
+			ctx.ui.notify(`Meeting Mirror page: ${server.url}${lan ? ` (teammates: http://${lan}:${server.url.split(":").pop()})` : ""}`, "info");
 		} catch (err) {
+			server = null;
 			ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
 		}
 	});
@@ -100,7 +102,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 			if (parsed.kind === "manual") {
 				poll = parsed.poll;
 			} else {
-				let source: MirrorMessage;
+				let source: { role: "user" | "assistant"; text: string; timestamp: number };
 				try {
 					source = nthLastAssistant(s.getSnapshot().messages, parsed.n);
 				} catch (err) {
@@ -108,7 +110,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 					return;
 				}
 				const complete = async (prompt: string): Promise<string> => {
-					const model = ctx.model ?? ctx.modelRegistry.list()[0]?.[0];
+					const model = ctx.model ?? ctx.modelRegistry.getAvailable()[0];
 					if (!model) throw new ExtractionError("No model available for poll extraction.");
 					if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
 						throw new ExtractionError("No authentication configured for the session model.");

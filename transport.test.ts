@@ -104,10 +104,16 @@ describe("LocalServer", () => {
 		await conn.ready;
 		state.openPoll(poll);
 
+		const idRes = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "alice" }),
+		});
+		const { token } = await idRes.json();
 		const voteRes = await fetch(`${base}/vote`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ username: "alice", choice: "A", remark: "hi" }),
+			body: JSON.stringify({ token, username: "alice", choice: "A", remark: "hi" }),
 		});
 		expect(voteRes.status).toBe(200);
 
@@ -121,10 +127,16 @@ describe("LocalServer", () => {
 
 	it("vote with no poll open → 409", async () => {
 		const { base } = await start();
+		const idRes = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "x" }),
+		});
+		const { token } = await idRes.json();
 		const res = await fetch(`${base}/vote`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ username: "x", choice: "A", remark: "" }),
+			body: JSON.stringify({ token, username: "x", choice: "A", remark: "" }),
 		});
 		expect(res.status).toBe(409);
 	});
@@ -132,22 +144,22 @@ describe("LocalServer", () => {
 	it("vote with unknown choice → 409", async () => {
 		const { state, base } = await start();
 		state.openPoll(poll);
+		const idRes = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "x" }),
+		});
+		const { token } = await idRes.json();
 		const res = await fetch(`${base}/vote`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ username: "x", choice: "Z", remark: "" }),
+			body: JSON.stringify({ token, username: "x", choice: "Z", remark: "" }),
 		});
 		expect(res.status).toBe(409);
 	});
 
-	it("POST /identify with non-empty username → 204; empty → 400", async () => {
+	it("POST /identify with empty username → 400", async () => {
 		const { base } = await start();
-		const ok = await fetch(`${base}/identify`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ username: "bob" }),
-		});
-		expect(ok.status).toBe(204);
 		const bad = await fetch(`${base}/identify`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -168,6 +180,91 @@ describe("LocalServer", () => {
 		const port = new URL(base).port;
 		const res = await fetch(`http://${lanIp}:${port}/`);
 		expect(res.status).toBe(200);
+	});
+
+	it("rejects vote without a Content-Type of application/json (CSRF guard)", async () => {
+		const { state, base } = await start();
+		state.openPoll(poll);
+		const res = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "text/plain" },
+			body: JSON.stringify({ token: "t", username: "x", choice: "A", remark: "" }),
+		});
+		expect(res.status).toBe(415);
+	});
+
+	it("identify returns a token; voting requires a matching token and username", async () => {
+		const { state, base } = await start();
+		state.openPoll(poll);
+		const idRes = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "alice" }),
+		});
+		const { token } = await idRes.json();
+		expect(typeof token).toBe("string");
+		expect(token.length).toBeGreaterThan(10);
+
+		// vote without token → 401
+		const noToken = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "alice", choice: "A", remark: "" }),
+		});
+		expect(noToken.status).toBe(401);
+
+		// vote with token but wrong username → 403
+		const wrongUser = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token, username: "bob", choice: "A", remark: "" }),
+		});
+		expect(wrongUser.status).toBe(403);
+
+		// vote with matching token → 200
+		const ok = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token, username: "alice", choice: "A", remark: "" }),
+		});
+		expect(ok.status).toBe(200);
+
+		// second identify with the same username → 409
+		const dup = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "alice" }),
+		});
+		expect(dup.status).toBe(409);
+	});
+
+	it("rejects request bodies over 64 KiB with 413", async () => {
+		const { base } = await start();
+		const res = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "x", padding: "a".repeat(70000) }),
+		});
+		expect(res.status).toBe(413);
+	});
+
+	it("caps remark length server-side", async () => {
+		const { state, base } = await start();
+		state.openPoll(poll);
+		const idRes = await fetch(`${base}/identify`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "alice" }),
+		});
+		const { token } = await idRes.json();
+		const res = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token, username: "alice", choice: "A", remark: "r".repeat(600) }),
+		});
+		expect(res.status).toBe(200);
+		const events = state.reveal()[0] as { votes: { remark: string }[] };
+		expect(events.votes[0]!.remark.length).toBe(500);
 	});
 
 	it("stop() closes the server", async () => {

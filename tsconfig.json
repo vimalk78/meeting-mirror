@@ -8,6 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["state.ts", "extract.ts", "transport.ts", "index-helpers.ts", "*.test.ts"],
-  "exclude": ["index.ts"]
+  "include": ["*.ts", "*.test.ts"]
 }

@@ -70,16 +70,12 @@ export function formatMessage(m) {
 	</div>`;
 }
 
-function formatTimestamp(ts) {
-	return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-void formatTimestamp;
-
 // ---------------------------------------------------------------------------
 // Browser wiring below — never executed in Node tests.
 // ---------------------------------------------------------------------------
 
 let username = null;
+let voteToken = null;
 let pollActive = false;
 
 function appendMessage(m) {
@@ -111,15 +107,25 @@ function renderPollCard(poll) {
 
 async function castVote(choice) {
 	const remarkEl = document.getElementById("poll-remark");
-	const res = await fetch("/vote", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ username, choice, remark: remarkEl ? remarkEl.value : "" }),
-	});
-	if (res.ok && pollActive) {
-		for (const btn of document.querySelectorAll(".poll-option")) {
-			btn.classList.toggle("selected", btn.dataset.key === choice);
+	const status = document.getElementById("poll-status");
+	try {
+		const res = await fetch("/vote", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token: voteToken, username, choice, remark: remarkEl ? remarkEl.value : "" }),
+		});
+		if (res.ok) {
+			if (pollActive) {
+				for (const btn of document.querySelectorAll(".poll-option")) {
+					btn.classList.toggle("selected", btn.dataset.key === choice);
+				}
+			}
+			return;
 		}
+		const body = await res.json().catch(() => ({}));
+		if (status) status.textContent = `Vote rejected: ${body.error || res.status}`;
+	} catch (err) {
+		if (status) status.textContent = "Vote failed: network error";
 	}
 }
 
@@ -192,10 +198,13 @@ function initIdentify() {
 	const input = document.getElementById("username-input");
 	const button = document.getElementById("username-button");
 	username = localStorage.getItem("meeting-mirror-username");
-	if (username) {
+	voteToken = localStorage.getItem("meeting-mirror-token");
+	if (username && voteToken) {
 		overlay.classList.add("hidden");
 		return;
 	}
+	username = null;
+	voteToken = null;
 	overlay.classList.remove("hidden");
 	const join = async () => {
 		const name = input.value.trim();
@@ -206,9 +215,14 @@ function initIdentify() {
 			body: JSON.stringify({ username: name }),
 		});
 		if (res.ok) {
+			const { token } = await res.json();
 			localStorage.setItem("meeting-mirror-username", name);
+			localStorage.setItem("meeting-mirror-token", token);
 			username = name;
 			overlay.classList.add("hidden");
+		} else {
+			const body = await res.json().catch(() => ({}));
+			alert(body.error ? `Could not join: ${body.error}` : "Could not join.");
 		}
 	};
 	button.addEventListener("click", join);

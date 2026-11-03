@@ -61,6 +61,9 @@ export class MirrorState {
 
 	castVote(username: string, choice: string, remark: string): void {
 		if (!this.poll || this.revealed) {
+			if (this.revealed) {
+				throw new Error("Votes have already been revealed for this poll.");
+			}
 			throw new Error("No poll is open.");
 		}
 		if (!this.poll.options.some((o) => o.key === choice)) {

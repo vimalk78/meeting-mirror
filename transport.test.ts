@@ -229,13 +229,29 @@ describe("LocalServer", () => {
 		});
 		expect(ok.status).toBe(200);
 
-		// second identify with the same username → 409
-		const dup = await fetch(`${base}/identify`, {
+		// re-identify with the same username → new token replaces the old one
+		const reIdentify = await fetch(`${base}/identify`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice" }),
 		});
-		expect(dup.status).toBe(409);
+		expect(reIdentify.status).toBe(200);
+		const { token: token2 } = await reIdentify.json();
+		expect(token2).not.toBe(token);
+		// the old token is invalidated
+		const oldVote = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token, username: "alice", choice: "B", remark: "" }),
+		});
+		expect(oldVote.status).toBe(403);
+		// the new token works
+		const newVote = await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token: token2, username: "alice", choice: "B", remark: "" }),
+		});
+		expect(newVote.status).toBe(200);
 	});
 
 	it("rejects request bodies over 64 KiB with 413", async () => {

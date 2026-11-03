@@ -166,6 +166,9 @@ function clearPollCard() {
 
 function handleEvent(event) {
 	if (event.type === "snapshot") {
+		// A snapshot is the full state (first connect or reconnect after a
+		// server restart): rebuild the page, never append on top of it.
+		document.getElementById("transcript").innerHTML = '<div id="poll-card" class="poll-card" aria-live="polite"></div>';
 		for (const m of event.snapshot.messages) appendMessage(m);
 		if (event.snapshot.poll && !event.snapshot.revealed) renderPollCard(event.snapshot.poll);
 		if (event.snapshot.revealed && event.snapshot.poll) renderReveal(event.snapshot.revealed, event.snapshot.poll);
@@ -213,15 +216,31 @@ function keyboardShortcuts() {
 	});
 }
 
-function initIdentify() {
+async function initIdentify() {
 	const overlay = document.getElementById("identify-overlay");
 	const input = document.getElementById("username-input");
 	const button = document.getElementById("username-button");
-	username = localStorage.getItem("meeting-mirror-username");
-	voteToken = localStorage.getItem("meeting-mirror-token");
-	if (username && voteToken) {
-		overlay.classList.add("hidden");
-		return;
+	const storedName = localStorage.getItem("meeting-mirror-username");
+	if (storedName) {
+		// Re-identify on load: server restarts (new pi session, /reload)
+		// invalidate stored tokens, and identify is idempotent.
+		try {
+			const res = await fetch("/identify", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ username: storedName }),
+			});
+			if (res.ok) {
+				const { token } = await res.json();
+				localStorage.setItem("meeting-mirror-token", token);
+				username = storedName;
+				voteToken = token;
+				overlay.classList.add("hidden");
+				return;
+			}
+		} catch {
+			/* fall through to the overlay */
+		}
 	}
 	username = null;
 	voteToken = null;

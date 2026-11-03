@@ -198,10 +198,11 @@ export class LocalServer implements Transport {
 					res.end(JSON.stringify({ error: "too many identities this session" }));
 					return;
 				}
-				if ([...this.tokens.values()].includes(name)) {
-					res.writeHead(409, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "username already taken in this session" }));
-					return;
+				// Re-identifying a name replaces its token (idempotent identify):
+				// a teammate returning after a server restart must be able to
+				// rejoin under the same name. The old token is invalidated.
+				for (const [existingToken, existingName] of this.tokens) {
+					if (existingName === name) this.tokens.delete(existingToken);
 				}
 				const token = randomUUID();
 				this.tokens.set(token, name);

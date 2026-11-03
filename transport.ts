@@ -24,6 +24,8 @@ export class LocalServer implements Transport {
 	private sseClients = new Set<ServerResponse>();
 	private chosenPort = 0;
 	private tokens = new Map<string, string>(); // token → username
+	/** Random per-instance id: lets pages detect a server restart. */
+	readonly sessionId = randomUUID();
 
 	constructor(
 		private state: MirrorState,
@@ -119,7 +121,9 @@ export class LocalServer implements Transport {
 			"cache-control": "no-cache",
 			connection: "keep-alive",
 		});
-		res.write(`data: ${JSON.stringify({ type: "snapshot", snapshot: this.state.getSnapshot() })}\n\n`);
+		res.write(
+			`data: ${JSON.stringify({ type: "snapshot", sessionId: this.sessionId, snapshot: this.state.getSnapshot() })}\n\n`,
+		);
 		this.sseClients.add(res);
 		reqCloseCleanup(res, () => this.sseClients.delete(res));
 	}

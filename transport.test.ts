@@ -72,16 +72,33 @@ describe("LocalServer", () => {
 		expect((await fetch(`${base}/page.js`)).status).toBe(200);
 	});
 
-	it("SSE connection receives snapshot with prior messages", async () => {
+	it("SSE connection receives snapshot with a sessionId", async () => {
 		const { state, base } = await start();
 		state.appendMessage({ role: "user", text: "prior", timestamp: 1 });
 		const conn = sseConnect(base);
 		await conn.ready;
-		expect(conn.events[0]).toEqual({
+		expect(conn.events[0]).toMatchObject({
 			type: "snapshot",
+			sessionId: expect.any(String),
 			snapshot: { messages: [{ role: "user", text: "prior", timestamp: 1 }], poll: null, revealed: null, voteCount: null },
 		});
 		conn.close();
+	});
+
+	it("a restarted server reports a different sessionId", async () => {
+		const { state, base } = await start();
+		const conn1 = sseConnect(base);
+		await conn1.ready;
+		const id1 = conn1.events[0].sessionId;
+		conn1.close();
+		await server!.stop();
+		const server2 = new LocalServer(state, { port: 0 });
+		server = server2;
+		await server2.start();
+		const conn2 = sseConnect(server2.url);
+		await conn2.ready;
+		expect(conn2.events[0].sessionId).not.toBe(id1);
+		conn2.close();
 	});
 
 	it("appendMessage after connect → SSE receives transcript_delta", async () => {

@@ -153,6 +153,7 @@ export function formatMessage(m) {
 let username = null;
 let voteToken = null;
 let pollActive = false;
+let currentSessionId = null;
 
 function appendMessage(m) {
 	const pollCard = document.getElementById("poll-card");
@@ -230,11 +231,11 @@ function updateIdentityChip() {
 	}
 }
 
-function showIdentifyOverlay() {
+function showIdentifyOverlay(prefill) {
 	const overlay = document.getElementById("identify-overlay");
 	const input = document.getElementById("username-input");
 	overlay.classList.remove("hidden");
-	input.value = "";
+	input.value = prefill ?? "";
 	input.focus();
 }
 
@@ -257,6 +258,7 @@ function handleEvent(event) {
 	if (event.type === "snapshot") {
 		// A snapshot is the full state (first connect or reconnect after a
 		// server restart): rebuild the page, never append on top of it.
+		syncIdentityToSession(event.sessionId);
 		rebuildTranscript(event.snapshot.messages);
 		if (event.snapshot.poll && !event.snapshot.revealed) {
 			renderPollCard(event.snapshot.poll, event.snapshot.voteCount ?? 0);
@@ -314,17 +316,33 @@ function keyboardShortcuts() {
 	});
 }
 
-async function initIdentify() {
+function syncIdentityToSession(sessionId) {
+	currentSessionId = sessionId;
+	const storedSession = localStorage.getItem("meeting-mirror-session");
+	const storedName = localStorage.getItem("meeting-mirror-username");
+	const storedToken = localStorage.getItem("meeting-mirror-token");
+	if (storedSession === sessionId && storedName && storedToken) {
+		// Same server instance: the stored identity is still valid.
+		username = storedName;
+		voteToken = storedToken;
+		updateIdentityChip();
+		return;
+	}
+	// New server instance (restarted pi session): the user has not joined
+	// this session. Show the login page, name prefilled for convenience.
+	username = null;
+	voteToken = null;
+	updateIdentityChip();
+	showIdentifyOverlay(storedName);
+}
+
+function initIdentify() {
 	const overlay = document.getElementById("identify-overlay");
 	const input = document.getElementById("username-input");
 	const button = document.getElementById("username-button");
-
-	// Bind the join handlers FIRST: the eager re-identify path below
-	// returns early, and the overlay must still work afterwards when the
-	// user clicks "switch name" on the identity chip.
 	const join = async () => {
 		const name = input.value.trim();
-		if (!name) return;
+		if (!name || !currentSessionId) return;
 		try {
 			const res = await fetch("/identify", {
 				method: "POST",
@@ -335,6 +353,7 @@ async function initIdentify() {
 				const { token } = await res.json();
 				localStorage.setItem("meeting-mirror-username", name);
 				localStorage.setItem("meeting-mirror-token", token);
+				localStorage.setItem("meeting-mirror-session", currentSessionId);
 				username = name;
 				voteToken = token;
 				overlay.classList.add("hidden");
@@ -351,33 +370,6 @@ async function initIdentify() {
 	input.addEventListener("keydown", (e) => {
 		if (e.key === "Enter") join();
 	});
-
-	const storedName = localStorage.getItem("meeting-mirror-username");
-	if (storedName) {
-		// Re-identify on load: server restarts (new pi session, /reload)
-		// invalidate stored tokens, and identify is idempotent.
-		try {
-			const res = await fetch("/identify", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ username: storedName }),
-			});
-			if (res.ok) {
-				const { token } = await res.json();
-				localStorage.setItem("meeting-mirror-token", token);
-				username = storedName;
-				voteToken = token;
-				overlay.classList.add("hidden");
-				updateIdentityChip();
-				return;
-			}
-		} catch {
-			/* fall through to the overlay */
-		}
-	}
-	username = null;
-	voteToken = null;
-	overlay.classList.remove("hidden");
 }
 
 function initJumpLatest() {
@@ -401,7 +393,7 @@ if (typeof document !== "undefined") {
 		updateIdentityChip();
 		showIdentifyOverlay();
 	});
-	initIdentify().then(updateIdentityChip);
+	initIdentify();
 	initJumpLatest();
 	keyboardShortcuts();
 	connectEvents();

@@ -168,12 +168,16 @@ function appendMessage(m) {
 	if (!atBottom && jump) jump.classList.remove("hidden");
 }
 
-function renderPollCard(poll, initialCount = 0) {
-	// Anchor the card at the current end of the conversation: below the
-	// message that presented the options. Later messages append after it.
+function positionPollCard(anchor) {
 	const transcript = document.getElementById("transcript");
 	const card = document.getElementById("poll-card");
-	transcript.appendChild(card);
+	// Position relative to messages, not to the current DOM index of the card.
+	const messages = transcript.querySelectorAll(":scope > .message");
+	transcript.insertBefore(card, messages[Math.min(anchor, messages.length)] ?? null);
+}
+
+function renderPollCard(poll, initialCount = 0, anchor = document.querySelectorAll("#transcript > .message").length) {
+	positionPollCard(anchor);
 	const buttons = poll.options
 		.map((o) => `<button class="poll-option" data-key="${escapeHtml(o.key)}">${escapeHtml(o.key)} · ${escapeHtml(o.label)}</button>`)
 		.join("");
@@ -261,24 +265,21 @@ function handleEvent(event) {
 		// A snapshot is the full state (first connect or reconnect after a
 		// server restart): rebuild the page, never append on top of it.
 		syncIdentityToSession(event.sessionId);
-		rebuildTranscript(event.snapshot.messages);
-		if (event.snapshot.poll && !event.snapshot.revealed) {
-			renderPollCard(event.snapshot.poll, event.snapshot.voteCount ?? 0);
-		}
-		if (event.snapshot.revealed && event.snapshot.poll) renderReveal(event.snapshot.revealed, event.snapshot.poll);
+		restoreSnapshot(event.snapshot);
 	} else if (event.type === "transcript_reset") {
-		// The session was rewound or forked: replace the whole transcript.
-		rebuildTranscript(event.messages);
+		// The session was rewound or forked: rebuild messages and restore the poll.
+		restoreSnapshot(event.snapshot);
 	} else if (event.type === "transcript_delta") {
 		appendMessage(event.message);
 	} else if (event.type === "poll_open") {
-		renderPollCard(event.poll);
+		renderPollCard(event.poll, 0, event.anchor);
 	} else if (event.type === "poll_reveal") {
 		// votes arrive with the current poll from the last snapshot/open
 		const lastPoll = currentPoll;
 		renderReveal(event.votes, lastPoll);
 	} else if (event.type === "poll_close") {
 		clearPollCard();
+		currentPoll = null;
 	} else if (event.type === "vote_cast") {
 		const status = document.getElementById("poll-status");
 		if (status) status.textContent = `${event.count} votes in · hidden until reveal`;
@@ -288,10 +289,18 @@ function handleEvent(event) {
 let currentPoll = null;
 const origHandle = handleEvent;
 handleEvent = function (event) {
-	if (event.type === "snapshot" && event.snapshot.poll) currentPoll = event.snapshot.poll;
+	if (event.type === "snapshot" || event.type === "transcript_reset") currentPoll = event.snapshot.poll;
 	if (event.type === "poll_open") currentPoll = event.poll;
 	origHandle(event);
 };
+
+function restoreSnapshot(snapshot) {
+	rebuildTranscript(snapshot.messages);
+	if (!snapshot.poll) return;
+	positionPollCard(snapshot.pollAnchor ?? snapshot.messages.length);
+	if (snapshot.revealed) renderReveal(snapshot.revealed, snapshot.poll);
+	else renderPollCard(snapshot.poll, snapshot.voteCount ?? 0, snapshot.pollAnchor ?? snapshot.messages.length);
+}
 
 function rebuildTranscript(messages) {
 	document.getElementById("transcript").innerHTML = '<div id="poll-card" class="poll-card" aria-live="polite"></div>';

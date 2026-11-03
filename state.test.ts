@@ -40,6 +40,18 @@ describe("MirrorState poll lifecycle", () => {
 		],
 	};
 
+	it("records the opening position and preserves it across later messages and reveal", () => {
+		const s = new MirrorState();
+		s.appendMessage(msg("assistant", "options"));
+		expect(s.openPoll(poll)).toEqual([{ type: "poll_open", poll, anchor: 1 }]);
+		s.appendMessage(msg("user", "question"));
+		s.reveal();
+		expect(s.getSnapshot().pollAnchor).toBe(1);
+		const reset = s.resetMessages([msg("assistant", "fork options"), msg("user", "fork question")]);
+		expect(reset).toEqual([{ type: "transcript_reset", snapshot: s.getSnapshot() }]);
+		expect(s.getSnapshot().pollAnchor).toBe(1);
+	});
+
 	it("openPoll emits poll_open", () => {
 		const s = new MirrorState();
 		const events = s.openPoll(poll);
@@ -47,6 +59,7 @@ describe("MirrorState poll lifecycle", () => {
 			{
 				type: "poll_open",
 				poll,
+				anchor: 0,
 			},
 		]);
 		expect(s.getSnapshot().poll).toEqual(poll);
@@ -141,15 +154,7 @@ describe("MirrorState poll lifecycle", () => {
 		expect(s.getSnapshot().messages.map((m) => m.text)).toEqual(["new branch a", "new branch b"]);
 		expect(s.getSnapshot().poll).toEqual(poll); // poll untouched
 		expect(s.getSnapshot().voteCount).toBe(1);
-		expect(received).toEqual([
-			{
-				type: "transcript_reset",
-				messages: [
-					{ role: "user", text: "new branch a", timestamp: 1000 },
-					{ role: "assistant", text: "new branch b", timestamp: 1000 },
-				],
-			},
-		]);
+		expect(received).toEqual([{ type: "transcript_reset", snapshot: s.getSnapshot() }]);
 	});
 
 	it("closePoll emits poll_close and clears state; snapshot after reopen has empty poll area", () => {

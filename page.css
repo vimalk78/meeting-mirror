@@ -40,20 +40,14 @@ body {
 	border-radius: 3px;
 }
 
-/* Poll card — accent-colored, fixed above the fold bottom */
+/* Poll card — accent-colored, inline at the end of the transcript */
 .poll-card {
-	position: fixed;
-	left: 50%;
-	transform: translateX(-50%);
-	bottom: 64px;
-	width: min(680px, calc(100vw - 32px));
 	background: var(--accent-bg);
 	border: 1px solid var(--accent);
 	border-radius: 8px;
 	padding: 14px 16px;
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+	margin: 8px 0 24px;
 	font-family: -apple-system, "Segoe UI", sans-serif;
-	z-index: 5;
 }
 .poll-card:empty { display: none; }
 .poll-label {
@@ -186,6 +180,5 @@ body {
 }
 
 @media (max-width: 600px) {
-	.poll-card { bottom: 56px; }
 	.tally-names { display: none; }
 }

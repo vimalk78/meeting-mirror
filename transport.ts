@@ -193,6 +193,11 @@ export class LocalServer implements Transport {
 					return;
 				}
 				const name = username.trim().slice(0, 40);
+				if (this.tokens.size >= 100) {
+					res.writeHead(503, { "content-type": "application/json" });
+					res.end(JSON.stringify({ error: "too many identities this session" }));
+					return;
+				}
 				if ([...this.tokens.values()].includes(name)) {
 					res.writeHead(409, { "content-type": "application/json" });
 					res.end(JSON.stringify({ error: "username already taken in this session" }));

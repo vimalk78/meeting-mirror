@@ -92,6 +92,7 @@ export async function extractPoll(messageText: string, complete: CompleteFn): Pr
 				question.trim() !== "" &&
 				Array.isArray(options) &&
 				options.length >= 2 &&
+				options.length <= 8 &&
 				options.every((o) => typeof o === "string" && o.trim() !== "")
 			) {
 				const keys = ["A", "B", "C", "D", "E", "F", "G", "H"];

@@ -125,3 +125,11 @@ describe("extractPoll", () => {
 		expect(calls).toBe(2);
 	});
 });
+
+describe("extractPoll option cap", () => {
+	it("more than 8 options → ExtractionError", async () => {
+		const complete: CompleteFn = async () =>
+			JSON.stringify({ question: "Q?", options: ["a", "b", "c", "d", "e", "f", "g", "h", "i"] });
+		await expect(extractPoll("msg", complete)).rejects.toThrow(/pipe/);
+	});
+});

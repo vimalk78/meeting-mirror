@@ -123,10 +123,28 @@ async function castVote(choice) {
 			return;
 		}
 		const body = await res.json().catch(() => ({}));
+		if (res.status === 401 || res.status === 403) {
+			// Stale identity (e.g. server restarted): re-identify.
+			localStorage.removeItem("meeting-mirror-username");
+			localStorage.removeItem("meeting-mirror-token");
+			username = null;
+			voteToken = null;
+			if (status) status.textContent = "Please identify again to vote.";
+			showIdentifyOverlay();
+			return;
+		}
 		if (status) status.textContent = `Vote rejected: ${body.error || res.status}`;
 	} catch (err) {
 		if (status) status.textContent = "Vote failed: network error";
 	}
+}
+
+function showIdentifyOverlay() {
+	const overlay = document.getElementById("identify-overlay");
+	const input = document.getElementById("username-input");
+	overlay.classList.remove("hidden");
+	input.value = "";
+	input.focus();
 }
 
 function renderReveal(votes, poll) {

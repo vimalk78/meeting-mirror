@@ -274,3 +274,19 @@ describe("LocalServer", () => {
 		await expect(fetch(`${base}/`)).rejects.toThrow();
 	});
 });
+
+describe("LocalServer identify cap", () => {
+	it("rejects identifies beyond 100 tokens", async () => {
+		const { base } = await start();
+		let lastStatus = 200;
+		for (let i = 0; i < 102; i++) {
+			const res = await fetch(`${base}/identify`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ username: `user-${i}` }),
+			});
+			lastStatus = res.status;
+		}
+		expect(lastStatus).toBe(503);
+	});
+});

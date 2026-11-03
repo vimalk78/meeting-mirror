@@ -79,7 +79,7 @@ describe("LocalServer", () => {
 		await conn.ready;
 		expect(conn.events[0]).toEqual({
 			type: "snapshot",
-			snapshot: { messages: [{ role: "user", text: "prior", timestamp: 1 }], poll: null, revealed: null },
+			snapshot: { messages: [{ role: "user", text: "prior", timestamp: 1 }], poll: null, revealed: null, voteCount: null },
 		});
 		conn.close();
 	});

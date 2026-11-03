@@ -21,8 +21,13 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	const seenEntries = new Set<string>();
 	const resync = (ctx: { sessionManager: { getBranch: () => BranchEntry[] } }): void => {
 		if (!state) return;
-		resyncFromBranch(ctx.sessionManager.getBranch(), seenEntries, (m) =>
-			state!.appendMessage({ ...m, timestamp: m.timestamp ?? Date.now() }),
+		resyncFromBranch(
+			ctx.sessionManager.getBranch(),
+			seenEntries,
+			(m) => state!.appendMessage({ ...m, timestamp: m.timestamp ?? Date.now() }),
+			// Rewind/fork: replace the transcript; poll state survives.
+			(messages) =>
+				state!.resetMessages(messages.map((m) => ({ ...m, timestamp: m.timestamp ?? Date.now() }))),
 		);
 	};
 
@@ -70,7 +75,12 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 				return;
 			}
 			const snapshot = ensureState().getSnapshot();
-			const votes = snapshot.poll ? `poll open: ${snapshot.poll.question}` : "no poll open";
+			const votes =
+				snapshot.poll === null
+				? "no poll open"
+				: snapshot.revealed
+					? `poll revealed: ${snapshot.poll.question} (${snapshot.voteCount} votes)`
+					: `poll open: ${snapshot.poll.question} (${snapshot.voteCount} votes in, hidden)`;
 			ctx.ui.notify(`${server.url} — ${votes}`, "info");
 		},
 	});

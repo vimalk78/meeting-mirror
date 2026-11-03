@@ -11,20 +11,96 @@ export function escapeHtml(s) {
 		.replaceAll("'", "&#39;");
 }
 
-/** Escape all HTML first, then apply minimal markdown: **bold**, `code`, paragraphs. */
+/**
+ * Render a safe Markdown subset: paragraphs, bold, italic, inline code,
+ * fenced code blocks, ATX headings, unordered/ordered lists, blockquotes,
+ * and links (http/https hrefs only). All HTML is escaped before any
+ * markdown is applied, so raw markup can never pass through.
+ */
 export function renderMarkdown(md) {
-	const paragraphs = String(md)
-		.split(/\n\s*\n/)
-		.map((p) => p.trim())
-		.filter(Boolean);
-	return paragraphs
-		.map((p) => {
-			let html = escapeHtml(p);
-			html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-			html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-			return `<p>${html}</p>`;
-		})
-		.join("");
+	const lines = String(md).split("\n");
+	const out = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		const fence = line.match(/^\s*```/);
+		if (fence) {
+			// Fenced code block: raw lines until the closing fence, escaped.
+			const code = [];
+			i++;
+			while (i < lines.length && !/^\s*```/.test(lines[i])) {
+				code.push(lines[i]);
+				i++;
+			}
+			i++; // closing fence
+			out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+			continue;
+		}
+		const heading = line.match(/^(#{1,4})\s+(.*)$/);
+		if (heading) {
+			const level = heading[1].length;
+			out.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+			i++;
+			continue;
+		}
+		if (/^\s*>/.test(line)) {
+			const quote = [];
+			while (i < lines.length && /^\s*>/.test(lines[i])) {
+				quote.push(lines[i].replace(/^\s*>\s?/, ""));
+				i++;
+			}
+			out.push(`<blockquote><p>${renderInline(quote.join(" "))}</p></blockquote>`);
+			continue;
+		}
+		const ul = line.match(/^\s*[-*]\s+/);
+		const ol = line.match(/^\s*\d+[.)]\s+/);
+		if (ul || ol) {
+			const tag = ul ? "ul" : "ol";
+			const items = [];
+			const itemRe = ul ? /^\s*[-*]\s+/ : /^\s*\d+[.)]\s+/;
+			while (i < lines.length && lines[i].match(itemRe)) {
+				items.push(`<li>${renderInline(lines[i].replace(itemRe, ""))}</li>`);
+				i++;
+			}
+			out.push(`<${tag}>${items.join("")}</${tag}>`);
+			continue;
+		}
+		if (line.trim() === "") {
+			i++;
+			continue;
+		}
+		// Paragraph: consecutive non-blank, non-structural lines.
+		const para = [];
+		while (
+				i < lines.length &&
+				lines[i].trim() !== "" &&
+				!/^\s*```/.test(lines[i]) &&
+				!/^#{1,4}\s/.test(lines[i]) &&
+				!/^\s*>/.test(lines[i]) &&
+				!/^\s*[-*]\s+/.test(lines[i]) &&
+				!/^\s*\d+[.)]\s+/.test(lines[i])
+		) {
+			para.push(lines[i]);
+			i++;
+		}
+		out.push(`<p>${renderInline(para.join(" "))}</p>`);
+	}
+	return out.join("");
+}
+
+/** Inline markdown on already-escaped-to-be text: escape first, then bold,
+ * code, links, italics. */
+function renderInline(text) {
+	let html = escapeHtml(text);
+	// inline code first; its content must not receive further markup
+	html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+	html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+	// links: only http(s) targets survive
+	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (whole, label, href) => {
+		return /^https?:\/\//.test(href) ? `<a href="${href}" target="_blank" rel="noopener">${label}</a>` : label;
+	});
+	html = html.replace(/(^|[^*])\*([^*\s][^*]*)\*(?![*])/g, "$1<em>$2</em>");
+	return html;
 }
 
 /** HTML for the revealed tally: proportional bars with voter names, remarks below. */
@@ -79,20 +155,17 @@ let voteToken = null;
 let pollActive = false;
 
 function appendMessage(m) {
-	const transcript = document.getElementById("transcript");
 	const pollCard = document.getElementById("poll-card");
-	const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
 	const jump = document.getElementById("jump-latest");
 	// Insert before the poll card so the card always trails the conversation.
 	pollCard.insertAdjacentHTML("beforebegin", formatMessage(m));
-	if (atBottom) {
-		window.scrollTo(0, document.body.scrollHeight);
-	} else if (jump) {
-		jump.classList.remove("hidden");
-	}
+	// The page never auto-scrolls (design rule); if the reader is now behind,
+	// show the jump control. The scroll listener re-hides it at the bottom.
+	const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+	if (!atBottom && jump) jump.classList.remove("hidden");
 }
 
-function renderPollCard(poll) {
+function renderPollCard(poll, initialCount = 0) {
 	const buttons = poll.options
 		.map((o) => `<button class="poll-option" data-key="${escapeHtml(o.key)}">${escapeHtml(o.key)} · ${escapeHtml(o.label)}</button>`)
 		.join("");
@@ -100,7 +173,7 @@ function renderPollCard(poll) {
 		<div class="poll-label">VOTE — ${escapeHtml(poll.question)}</div>
 		<div class="poll-options">${buttons}</div>
 		<input id="poll-remark" class="poll-remark-input" type="text" maxlength="500" placeholder="Optional remark…">
-		<div class="poll-status" id="poll-status">0 votes in · hidden until reveal</div>`;
+		<div class="poll-status" id="poll-status">${initialCount} votes in · hidden until reveal</div>`;
 	pollActive = true;
 	for (const btn of document.querySelectorAll(".poll-option")) {
 		btn.addEventListener("click", () => castVote(btn.dataset.key));
@@ -179,10 +252,14 @@ function handleEvent(event) {
 	if (event.type === "snapshot") {
 		// A snapshot is the full state (first connect or reconnect after a
 		// server restart): rebuild the page, never append on top of it.
-		document.getElementById("transcript").innerHTML = '<div id="poll-card" class="poll-card" aria-live="polite"></div>';
-		for (const m of event.snapshot.messages) appendMessage(m);
-		if (event.snapshot.poll && !event.snapshot.revealed) renderPollCard(event.snapshot.poll);
+		rebuildTranscript(event.snapshot.messages);
+		if (event.snapshot.poll && !event.snapshot.revealed) {
+			renderPollCard(event.snapshot.poll, event.snapshot.voteCount ?? 0);
+		}
 		if (event.snapshot.revealed && event.snapshot.poll) renderReveal(event.snapshot.revealed, event.snapshot.poll);
+	} else if (event.type === "transcript_reset") {
+		// The session was rewound or forked: replace the whole transcript.
+		rebuildTranscript(event.messages);
 	} else if (event.type === "transcript_delta") {
 		appendMessage(event.message);
 	} else if (event.type === "poll_open") {
@@ -206,6 +283,11 @@ handleEvent = function (event) {
 	if (event.type === "poll_open") currentPoll = event.poll;
 	origHandle(event);
 };
+
+function rebuildTranscript(messages) {
+	document.getElementById("transcript").innerHTML = '<div id="poll-card" class="poll-card" aria-live="polite"></div>';
+	for (const m of messages) appendMessage(m);
+}
 
 function connectEvents() {
 	const es = new EventSource("/events");

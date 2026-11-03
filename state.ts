@@ -20,12 +20,14 @@ export type MirrorEvent =
 	| { type: "poll_open"; poll: Poll }
 	| { type: "poll_reveal"; votes: VoteRecord[] }
 	| { type: "poll_close" }
-	| { type: "vote_cast"; count: number };
+	| { type: "vote_cast"; count: number }
+	| { type: "transcript_reset"; messages: MirrorMessage[] };
 
 export type MirrorSnapshot = {
 	messages: MirrorMessage[];
 	poll: Poll | null;
 	revealed: VoteRecord[] | null;
+	voteCount: number | null;
 };
 
 type Subscriber = (event: MirrorEvent) => void;
@@ -97,7 +99,17 @@ export class MirrorState {
 			messages: [...this.messages],
 			poll: this.poll,
 			revealed: this.revealed,
+			voteCount: this.poll ? this.votes.size : null,
 		};
+	}
+
+	/**
+	 * Replace the whole transcript (used when the session branch is
+	 * rewound or forked) without touching poll state.
+	 */
+	resetMessages(messages: MirrorMessage[]): MirrorEvent[] {
+		this.messages = [...messages];
+		return this.emit({ type: "transcript_reset", messages: this.messages });
 	}
 
 	private emit(event: MirrorEvent): MirrorEvent[] {

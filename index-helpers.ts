@@ -75,11 +75,42 @@ export function resyncFromBranch(
 	branch: BranchEntry[],
 	seen: Set<string>,
 	append: (message: { role: "user" | "assistant"; text: string; timestamp?: number }) => void,
+	reset?: (messages: { role: "user" | "assistant"; text: string; timestamp?: number }[]) => void,
 ): boolean {
+	const keyOf = (entry: BranchEntry, i: number): string =>
+		typeof entry.id === "string" && entry.id !== "" ? entry.id : `#${i}`;
+	const branchKeys = new Set(branch.map((entry, i) => keyOf(entry, i)));
+	let rewound = false;
+	for (const key of seen) {
+		if (!branchKeys.has(key)) {
+			rewound = true;
+			break;
+		}
+	}
+	if (rewound && reset) {
+		// The session was rewound or forked: rebuild the transcript from the
+		// active branch instead of appending, and re-seed the seen set.
+		seen.clear();
+		const messages: { role: "user" | "assistant"; text: string; timestamp?: number }[] = [];
+		for (let i = 0; i < branch.length; i++) {
+			const entry = branch[i]!;
+			seen.add(keyOf(entry, i));
+			if (entry.type !== "message" || !entry.message) continue;
+			if (isConversationMessage(entry.message)) {
+				messages.push({
+					role: entry.message.role === "user" ? "user" : "assistant",
+					text: messageText(entry.message),
+					timestamp: entry.message.timestamp,
+				});
+			}
+		}
+		reset(messages);
+		return true;
+	}
 	let appended = false;
 	for (let i = 0; i < branch.length; i++) {
 		const entry = branch[i]!;
-		const key = typeof entry.id === "string" && entry.id !== "" ? entry.id : `#${i}`;
+		const key = keyOf(entry, i);
 		if (seen.has(key)) continue;
 		seen.add(key);
 		if (entry.type !== "message" || !entry.message) continue;

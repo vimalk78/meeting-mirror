@@ -97,6 +97,58 @@ describe("renderMarkdown", () => {
 	});
 });
 
+describe("renderMarkdown — full structures", () => {
+	it("renders ATX headings", () => {
+		const html = renderMarkdown("## Title");
+		expect(html).toContain("<h2>Title</h2>");
+	});
+
+	it("renders unordered lists", () => {
+		const html = renderMarkdown("- one\n- two");
+		expect(html).toContain("<ul>");
+		expect(html).toContain("<li>one</li>");
+		expect(html).toContain("<li>two</li>");
+	});
+
+	it("renders ordered lists", () => {
+		const html = renderMarkdown("1. first\n2. second");
+		expect(html).toContain("<ol>");
+		expect(html).toContain("<li>first</li>");
+	});
+
+	it("renders blockquotes", () => {
+		const html = renderMarkdown("> quoted text");
+		expect(html).toContain("<blockquote>");
+		expect(html).toContain("quoted text");
+	});
+
+	it("renders fenced code blocks with escaped content", () => {
+		const html = renderMarkdown("```\nlet x = '<b>';\n```");
+		expect(html).toContain("<pre><code>");
+		expect(html).not.toContain("<b>");
+		expect(html).toContain("&lt;b&gt;");
+	});
+
+	it("renders links with http(s) hrefs only", () => {
+		const html = renderMarkdown("see [docs](https://example.com)");
+		expect(html).toContain('<a href="https://example.com"');
+		expect(html).toContain("docs</a>");
+		const evil = renderMarkdown("[x](javascript:alert(1))");
+		expect(evil).not.toContain('href="javascript');
+	});
+
+	it("renders italics", () => {
+		const html = renderMarkdown("a *word* b");
+		expect(html).toContain("<em>word</em>");
+	});
+
+	it("joins soft line breaks inside a paragraph", () => {
+		const html = renderMarkdown("line one\nline two");
+		expect(html).toContain("line one");
+		expect(html).toContain("line two");
+	});
+});
+
 describe("renderTally", () => {
 	it("renders one bar per option with proportional widths, voter names, and attributed remarks", () => {
 		const options = [
@@ -169,6 +221,36 @@ describe("resyncFromBranch", () => {
 		const branch = [user("1", "hi"), assistant("2b", "different reply")];
 		resyncFromBranch(branch as never, seen, (m) => appended.push({ role: m.role, text: m.text }));
 		expect(appended).toEqual([{ role: "assistant", text: "different reply" }]);
+	});
+
+	it("detects a rewind/fork and rebuilds via reset instead of appending", () => {
+		const seen = new Set<string>();
+		const appended: string[] = [];
+		let resetWith: string[] | null = null;
+		// first sync over the original branch
+		const original = [user("1", "q"), assistant("2", "old reply")];
+		resyncFromBranch(original as never, seen, (m) => appended.push(m.text));
+		expect(appended).toEqual(["q", "old reply"]);
+		// fork: same prefix, abandoned tail, divergent new entry
+		const forked = [user("1", "q"), assistant("2b", "new reply")];
+		resyncFromBranch(
+			forked as never,
+			seen,
+			(m) => appended.push(m.text),
+			(messages) => (resetWith = messages.map((m) => m.text)),
+		);
+		expect(resetWith).toEqual(["q", "new reply"]);
+		expect(appended).toEqual(["q", "old reply"]); // nothing appended on rebuild
+		// the seen set now matches the forked branch: no further rewind
+		let resetAgain: string[] | null = null;
+		resyncFromBranch(
+			[...forked, user("4", "more")] as never,
+			seen,
+			(m) => appended.push(m.text),
+			(messages) => (resetAgain = messages.map((m) => m.text)),
+		);
+		expect(resetAgain).toBeNull();
+		expect(appended).toEqual(["q", "old reply", "more"]);
 	});
 
 	it("preserves the original message timestamp", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parsePollArgs, buildExtractionPrompt, extractPoll, PollArgError } from "extract.js";
-import type { CompleteFn } from "extract.js";
+import { parsePollArgs, buildExtractionPrompt, extractPoll, PollArgError } from "./extract.js";
+import type { CompleteFn } from "./extract.js";
 
 describe("parsePollArgs", () => {
 	it("empty string → index form, n=1", () => {

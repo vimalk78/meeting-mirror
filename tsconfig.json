@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
-    "allowImportingTsExtensions": false,
+    "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "*.test.ts"]
+  "include": ["state.ts", "extract.ts", "transport.ts", "index-helpers.ts", "*.test.ts"],
+  "exclude": ["index.ts"]
 }

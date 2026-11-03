@@ -112,17 +112,15 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("reveal", {
-		description: "Reveal the current poll's votes on the Meeting Mirror page and in the session",
+		description: "Reveal the current poll's votes on the Meeting Mirror page and in the terminal",
 		handler: async (_args, ctx) => {
 			try {
 				const events = ensureState().reveal();
 				const revealEvent = events.find((e) => e.type === "poll_reveal");
 				if (revealEvent && revealEvent.type === "poll_reveal") {
-					const summary = formatPollResult(ensureState().getSnapshot().poll, revealEvent.votes);
-					ctx.ui.notify(summary, "info");
-					// Record the result as a user message so the session (and the
-					// page, via the normal relay) knows the outcome.
-					await pi.sendUserMessage(summary, { deliverAs: "followUp" });
+					// Display only — terminal and page. Nothing enters the model's
+					// context; the moderator relays or overrides as they choose.
+					ctx.ui.notify(formatPollResult(ensureState().getSnapshot().poll, revealEvent.votes), "info");
 				}
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : "No poll is open.", "warning");

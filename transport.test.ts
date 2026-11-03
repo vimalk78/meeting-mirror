@@ -229,7 +229,8 @@ describe("LocalServer", () => {
 		});
 		expect(ok.status).toBe(200);
 
-		// re-identify with the same username → new token replaces the old one
+		// re-identify with the same username → a second valid token
+		// (multiple tabs of one user each hold their own token)
 		const reIdentify = await fetch(`${base}/identify`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -238,20 +239,19 @@ describe("LocalServer", () => {
 		expect(reIdentify.status).toBe(200);
 		const { token: token2 } = await reIdentify.json();
 		expect(token2).not.toBe(token);
-		// the old token is invalidated
-		const oldVote = await fetch(`${base}/vote`, {
+		// both tokens work
+		const vote1 = await fetch(`${base}/vote`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "alice", choice: "B", remark: "" }),
 		});
-		expect(oldVote.status).toBe(403);
-		// the new token works
-		const newVote = await fetch(`${base}/vote`, {
+		expect(vote1.status).toBe(200);
+		const vote2 = await fetch(`${base}/vote`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ token: token2, username: "alice", choice: "B", remark: "" }),
+			body: JSON.stringify({ token: token2, username: "alice", choice: "A", remark: "" }),
 		});
-		expect(newVote.status).toBe(200);
+		expect(vote2.status).toBe(200);
 	});
 
 	it("rejects request bodies over 64 KiB with 413", async () => {

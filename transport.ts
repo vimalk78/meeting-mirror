@@ -198,12 +198,11 @@ export class LocalServer implements Transport {
 					res.end(JSON.stringify({ error: "too many identities this session" }));
 					return;
 				}
-				// Re-identifying a name replaces its token (idempotent identify):
-				// a teammate returning after a server restart must be able to
-				// rejoin under the same name. The old token is invalidated.
-				for (const [existingToken, existingName] of this.tokens) {
-					if (existingName === name) this.tokens.delete(existingToken);
-				}
+				// Identify is idempotent and per-client: re-identifying a name
+			// issues an additional token (a returning teammate after a server
+				// restart, or a second tab of the same user). Votes are keyed by
+				// username in the poll state, so multiple tokens per name are
+				// safe; unknown tokens still cannot vote.
 				const token = randomUUID();
 				this.tokens.set(token, name);
 				res.writeHead(200, { "content-type": "application/json" });

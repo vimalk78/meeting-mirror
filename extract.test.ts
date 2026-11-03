@@ -133,3 +133,16 @@ describe("extractPoll option cap", () => {
 		await expect(extractPoll("msg", complete)).rejects.toThrow(/pipe/);
 	});
 });
+
+describe("extractPoll label normalization", () => {
+	it("strips leading list markers like 'A.' or '1)' from option labels", async () => {
+		const complete: CompleteFn = async () =>
+			JSON.stringify({ question: "Q?", options: ["A. Local server", "b) Relay host", "3. Tunnel"] });
+		const poll = await extractPoll("msg", complete);
+		expect(poll.options).toEqual([
+			{ key: "A", label: "Local server" },
+			{ key: "B", label: "Relay host" },
+			{ key: "C", label: "Tunnel" },
+		]);
+	});
+});

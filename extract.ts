@@ -98,7 +98,10 @@ export async function extractPoll(messageText: string, complete: CompleteFn): Pr
 				const keys = ["A", "B", "C", "D", "E", "F", "G", "H"];
 				return {
 					question: question.trim(),
-					options: options.map((label, i) => ({ key: keys[i] ?? String(i + 1), label: label.trim() })),
+					options: options.map((label, i) => ({
+						key: keys[i] ?? String(i + 1),
+						label: label.trim().replace(/^(?:[A-Ha-h]|\d{1,2})[.)]\s+/, "").trim(),
+					})),
 				};
 			}
 		}

@@ -1,0 +1,102 @@
+export type MirrorMessage = {
+	role: "user" | "assistant";
+	text: string;
+	timestamp: number;
+};
+
+export type Poll = {
+	question: string;
+	options: { key: string; label: string }[];
+};
+
+export type VoteRecord = {
+	username: string;
+	choice: string;
+	remark: string;
+};
+
+export type MirrorEvent =
+	| { type: "transcript_delta"; message: MirrorMessage }
+	| { type: "poll_open"; poll: Poll }
+	| { type: "poll_reveal"; votes: VoteRecord[] }
+	| { type: "poll_close" };
+
+export type MirrorSnapshot = {
+	messages: MirrorMessage[];
+	poll: Poll | null;
+	revealed: VoteRecord[] | null;
+};
+
+type Subscriber = (event: MirrorEvent) => void;
+
+export class MirrorState {
+	private messages: MirrorMessage[] = [];
+	private poll: Poll | null = null;
+	private revealed: VoteRecord[] | null = null;
+	private votes = new Map<string, VoteRecord>();
+	private subscribers = new Set<Subscriber>();
+
+	subscribe(fn: Subscriber): () => void {
+		this.subscribers.add(fn);
+		return () => {
+			this.subscribers.delete(fn);
+		};
+	}
+
+	appendMessage(message: MirrorMessage): void {
+		this.messages.push(message);
+		this.emit({ type: "transcript_delta", message });
+	}
+
+	openPoll(poll: Poll): MirrorEvent[] {
+		if (this.poll) {
+			throw new Error("A poll is already open. Close it with /poll close first.");
+		}
+		this.poll = poll;
+		this.revealed = null;
+		this.votes.clear();
+		return this.emit({ type: "poll_open", poll });
+	}
+
+	castVote(username: string, choice: string, remark: string): void {
+		if (!this.poll || this.revealed) {
+			throw new Error("No poll is open.");
+		}
+		if (!this.poll.options.some((o) => o.key === choice)) {
+			throw new Error(`Unknown choice key: ${choice}`);
+		}
+		this.votes.set(username, { username, choice, remark: remark ?? "" });
+	}
+
+	reveal(): MirrorEvent[] {
+		if (!this.poll || this.revealed) {
+			throw new Error("No poll is open.");
+		}
+		this.revealed = [...this.votes.values()];
+		return this.emit({ type: "poll_reveal", votes: this.revealed });
+	}
+
+	closePoll(): MirrorEvent[] {
+		if (!this.poll) {
+			throw new Error("No poll is open.");
+		}
+		const events = this.emit({ type: "poll_close" });
+		this.poll = null;
+		this.revealed = null;
+		this.votes.clear();
+		return events;
+	}
+
+	getSnapshot(): MirrorSnapshot {
+		return {
+			messages: [...this.messages],
+			poll: this.poll,
+			revealed: this.revealed,
+		};
+	}
+
+	private emit(event: MirrorEvent): MirrorEvent[] {
+		for (const fn of this.subscribers) fn(event);
+		return [event];
+	}
+}

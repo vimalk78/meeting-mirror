@@ -1,14 +1,9 @@
 # Meeting Mirror
 
 A [pi](https://github.com/earendil-works/pi-coding-agent) extension that
-mirrors a live brainstorming session to a web page your whole team can read
-at their own pace, with planning-poker-style voting.
-
-Built for the scenario where one team member runs a pi session (e.g. with
-the superpowers brainstorming skill) and shares their screen over a video
-call: the shared terminal window shows only a fragment of the content, and
-everyone reads at a different speed. Meeting Mirror serves the conversation
-as a clean document-style page each teammate opens in their own browser.
+mirrors a live brainstorming session to a web page, so a team following
+along over a shared screen can read at their own pace and vote on
+options, planning-poker style.
 
 ## What it does
 

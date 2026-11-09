@@ -57,25 +57,34 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		);
 	};
 
-	/** First non-internal IPv4 address of this machine, for the notify URL. */
-	const lanAddress = (): string | null => {
+	/** All non-internal IPv4 addresses of this machine, for the notify URL. */
+	const allAddresses = (): string[] => {
+		const found: string[] = [];
 		for (const nets of Object.values(networkInterfaces())) {
 			for (const net of nets ?? []) {
-				if (net.family === "IPv4" && !net.internal) return net.address;
+				if (net.family === "IPv4" && !net.internal) found.push(net.address);
 			}
 		}
-		return null;
+		return found;
 	};
+
+	/** Port from MEETING_MIRROR_PORT, else the LocalServer default. */
+	const configuredPort = (() => {
+		const raw = process.env.MEETING_MIRROR_PORT;
+		const n = raw ? Number.parseInt(raw, 10) : NaN;
+		return Number.isInteger(n) && n > 0 && n < 65536 ? n : undefined;
+	})();
 
 	pi.on("session_start", async (_event, ctx) => {
 		state = new MirrorState();
 		seenEntries.clear();
 		resync(ctx);
-		server = new LocalServer(state);
+		server = new LocalServer(state, { port: configuredPort });
 		try {
 			await server.start();
-			const lan = lanAddress();
-			ctx.ui.notify(`Meeting Mirror page: ${server.url}${lan ? ` (teammates: http://${lan}:${server.url.split(":").pop()})` : ""}`, "info");
+			const port = server.url.split(":").pop();
+			const urls = allAddresses().map((a) => `http://${a}:${port}`);
+			ctx.ui.notify(`Meeting Mirror page: ${server.url}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
 		} catch (err) {
 			server = null;
 			ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");

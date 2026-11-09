@@ -58,9 +58,15 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	};
 
 	/** All non-internal IPv4 addresses of this machine, for the notify URL. */
+	/**
+	 * IPv4 addresses teammates could plausibly reach, for the notify URL.
+	 * Skips loopback, virtual bridges (docker/libvirt/veth), and VPN tunnel
+	 * gateways (tun*), keeping physical NICs and mesh interfaces like wt0.
+	 */
 	const allAddresses = (): string[] => {
 		const found: string[] = [];
-		for (const nets of Object.values(networkInterfaces())) {
+		for (const [name, nets] of Object.entries(networkInterfaces())) {
+			if (/^(docker|virbr|veth|tun|br-)/.test(name)) continue;
 			for (const net of nets ?? []) {
 				if (net.family === "IPv4" && !net.internal) found.push(net.address);
 			}

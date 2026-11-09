@@ -37,8 +37,13 @@ the TypeScript directly. `npm install` is only needed to run the test suite
 
 ## Commands
 
+Sessions are **private by default** — nothing is served until you share:
+
 | Command | Effect |
 |---|---|
+| `/mirror share` | Start serving this session's page and print the URL |
+| `/mirror unshare` | Stop serving; connected pages disconnect |
+| `/mirror` | Show sharing status, URL, and poll state |
 | `/poll` | Extract a poll from the last assistant message (LLM call + terminal confirm) |
 | `/poll 2` | Same, from the 2nd-last assistant message |
 | `/poll Q \| opt \| opt` | Manual poll (pipe syntax) |

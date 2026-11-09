@@ -79,16 +79,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		state = new MirrorState();
 		seenEntries.clear();
 		resync(ctx);
-		server = new LocalServer(state, { port: configuredPort });
-		try {
-			await server.start();
-			const port = server.url.split(":").pop();
-			const urls = allAddresses().map((a) => `http://${a}:${port}`);
-			ctx.ui.notify(`Meeting Mirror page: ${server.url}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
-		} catch (err) {
-			server = null;
-			ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
-		}
+		// Sharing is opt-in: the session stays private until /mirror share.
+		ctx.ui.notify("Meeting Mirror: session is private. Use /mirror share to share it.", "info");
 	});
 
 	pi.on("session_shutdown", async () => {
@@ -102,11 +94,52 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		resync(ctx);
 	});
 
+	const startSharing = async (ctx: { ui: { notify: (msg: string, level: "info" | "warning") => void } }): Promise<void> => {
+		if (server) {
+			ctx.ui.notify("Meeting Mirror is already shared.", "info");
+			return;
+		}
+		const s = ensureState();
+		server = new LocalServer(s, { port: configuredPort });
+		try {
+			await server.start();
+			const port = server.url.split(":").pop();
+			const urls = allAddresses().map((a) => `http://${a}:${port}`);
+			ctx.ui.notify(`Meeting Mirror page: ${server.url}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
+		} catch (err) {
+			server = null;
+			ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
+		}
+	};
+
+	const stopSharing = async (ctx: { ui: { notify: (msg: string, level: "info" | "warning") => void } }): Promise<void> => {
+		if (!server) {
+			ctx.ui.notify("Meeting Mirror is not shared.", "info");
+			return;
+		}
+		await server.stop();
+		server = null;
+		ctx.ui.notify("Meeting Mirror: session is now private. Connected pages will disconnect.", "info");
+	};
+
 	pi.registerCommand("mirror", {
-		description: "Show the Meeting Mirror page URL and vote count",
-		handler: async (_args, ctx) => {
+		description: "Share status, or /mirror share | /mirror unshare",
+		handler: async (args, ctx) => {
+			const action = args.trim();
+			if (action === "share") {
+				await startSharing(ctx);
+				return;
+			}
+			if (action === "unshare") {
+				await stopSharing(ctx);
+				return;
+			}
+			if (action !== "") {
+				ctx.ui.notify("Usage: /mirror [share|unshare]", "warning");
+				return;
+			}
 			if (!server) {
-				ctx.ui.notify("Meeting Mirror is not running.", "warning");
+				ctx.ui.notify("Meeting Mirror: session is private. Use /mirror share to share it.", "info");
 				return;
 			}
 			const snapshot = ensureState().getSnapshot();

@@ -17,7 +17,9 @@ body {
 .transcript {
 	max-width: 680px;
 	margin: 0 auto;
-	padding: 24px 16px 8px;
+	/* bottom padding keeps the last message clear of the fixed overlays
+	   (jump button, member line) so text never flows behind them */
+	padding: 24px 16px 72px;
 }
 .message { margin-bottom: 22px; }
 .message .label {
@@ -209,9 +211,9 @@ body {
 	text-align: center;
 	background: var(--bg);
 	position: fixed;
+	top: 0;
 	left: 50%;
 	transform: translateX(-50%);
-	bottom: 88px;
 	padding: 8px;
 	z-index: 10;
 }
@@ -220,15 +222,15 @@ body {
 	font-family: -apple-system, "Segoe UI", sans-serif;
 	font-size: 12px;
 	color: var(--muted);
-	text-align: center;
 	background: var(--bg);
+	/* docked to the bottom-left corner, beside (not over) the reading
+	   column, so it never hovers above the newest text */
 	position: fixed;
-	left: 50%;
-	transform: translateX(-50%);
-	bottom: 56px;
-	padding: 0 16px;
+	left: 16px;
+	bottom: 16px;
+	padding: 0 8px;
 	z-index: 10;
-	max-width: 90vw;
+	max-width: 24vw;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;

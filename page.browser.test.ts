@@ -203,14 +203,19 @@ describe("poll status updates live (user report: 0 votes in)", () => {
 	});
 });
 
-describe("member line stays visible (user report: scrolls away)", () => {
-	it("page.css pins .members and .banner like the jump button", () => {
+describe("member line stays visible (user reports: scrolls away, hovers over text)", () => {
+	it("page.css pins .members to the side and .banner to the top, and the transcript keeps clear of fixed elements", () => {
 		const css = readFileSync("page.css", "utf8");
 		const rule = (sel: string): string => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
-		for (const sel of [".members", ".banner"]) {
-			expect(rule(sel), `${sel} must be position: fixed`).toMatch(/position:\s*fixed/);
-			expect(rule(sel), `${sel} must pin to the bottom`).toMatch(/bottom:/);
-		}
+		// member line: fixed, docked to the side so it never covers the reading column
+		expect(rule(".members")).toMatch(/position:\s*fixed/);
+		expect(rule(".members")).toMatch(/left:/);
+		expect(rule(".members")).not.toMatch(/transform:\s*translateX\(-50%\)/);
+		// waiting banner: fixed at the top, away from the newest text
+		expect(rule(".banner")).toMatch(/position:\s*fixed/);
+		expect(rule(".banner")).toMatch(/top:/);
+		// the last message must not flow behind the fixed overlays
+		expect(rule(".transcript")).toMatch(/padding:[^;]*\d+px[^;]*\d+px[^;]*\d+px/);
 	});
 });
 

@@ -301,3 +301,19 @@ describe("formatPollResult", () => {
 		expect(formatPollResult(null, [])).toBe("No poll result.");
 	});
 });
+
+describe("reveal notice (user report: result hidden by second toast)", () => {
+	it("combines the poll result and the close hint into one message", async () => {
+		const { revealNotice } = await import("./index.js");
+		const msg = revealNotice(
+			{ question: "Ship?", options: [{ key: "A", label: "yes" }, { key: "B", label: "no" }] },
+			[
+				{ username: "Ann", choice: "A", remark: "" },
+				{ username: "Bob", choice: "B", remark: "" },
+			],
+		);
+		expect(msg).toContain("[Poll result] Ship?");
+		expect(msg).toContain("A — yes: 1 vote (Ann)");
+		expect(msg).toContain("/poll-close");
+	});
+});

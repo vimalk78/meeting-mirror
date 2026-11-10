@@ -77,8 +77,11 @@ export class MirrorState {
 	}
 
 	reveal(): MirrorEvent[] {
-		if (!this.poll || this.revealed) {
+		if (!this.poll) {
 			throw new Error("No poll is open.");
+		}
+		if (this.revealed) {
+			throw new Error("Votes have already been revealed for this poll.");
 		}
 		this.revealed = [...this.votes.values()];
 		return this.emit({ type: "poll_reveal", votes: this.revealed });

@@ -176,3 +176,12 @@ describe("MirrorState poll lifecycle", () => {
 		expect(() => s.castVote("u", "A", "")).toThrow(/already been revealed/i);
 	});
 });
+
+describe("reveal error messages (user report: misleading)", () => {
+	it("reveal after reveal says already revealed, not 'no poll'", () => {
+		const s = new MirrorState();
+		s.openPoll({ question: "Q?", options: [{ key: "A", label: "a" }] });
+		s.reveal();
+		expect(() => s.reveal()).toThrow(/already been revealed/i);
+	});
+});

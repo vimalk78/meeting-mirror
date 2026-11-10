@@ -11,6 +11,15 @@ import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
 import { membersText, allVotedNotice } from "../page/page.js";
 
+/** Single notify for /reveal: the result plus the close hint in one
+ * message, because a second toast would replace the first. */
+export function revealNotice(
+	poll: Poll | null,
+	votes: { username: string; choice: string; remark: string }[],
+): string {
+	return `${formatPollResult(poll, votes)}\nRun /poll-close when the team has seen the results.`;
+}
+
 /** Human-readable poll result, used for the terminal notify and the
  * injected session message. */
 export function formatPollResult(
@@ -270,8 +279,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 				if (revealEvent && revealEvent.type === "poll_reveal") {
 					// Display only — terminal and page. Nothing enters the model's
 					// context; the moderator relays or overrides as they choose.
-					ctx.ui.notify(formatPollResult(ensureState().getSnapshot().poll, revealEvent.votes), "info");
-					ctx.ui.notify("Run /poll-close when the team has seen the results.", "info");
+					ctx.ui.notify(revealNotice(ensureState().getSnapshot().poll, revealEvent.votes), "info");
 				}
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : "No poll is open.", "warning");
@@ -375,6 +383,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => {
 			try {
 				ensureState().closePoll();
+				ctx.ui.notify("Poll closed. The page no longer shows it.", "info");
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : "No poll is open.", "warning");
 			}

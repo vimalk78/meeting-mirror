@@ -1,9 +1,9 @@
 # Meeting Mirror
 
 A [pi](https://github.com/earendil-works/pi-coding-agent) extension that
-mirrors a live brainstorming session to a web page. A team that follows
-along over a shared screen can read at its own pace and vote on options,
-planning-poker style.
+mirrors a live brainstorming session to a web page. Participants who
+follow along over a shared screen can read at their own pace and vote on
+options, planning-poker style.
 
 ## What it does
 
@@ -13,7 +13,7 @@ planning-poker style.
 - **Voting** — run `/poll` in pi. The extension extracts the question and
   options from the model's last message (a small side-channel LLM call).
   It shows them in the terminal for confirmation, then opens a poll on
-  every connected page. Teammates pick an option (click, or keys `1/2/3`,
+  every connected page. Participants pick an option (click, or keys `1/2/3`,
   `A/B/C`) and can add a remark. Votes stay hidden.
 - **Reveal** — `/reveal` shows everyone the tally: proportional bars with
   voter names, plus attributed remarks. Like planning poker, nobody anchors
@@ -21,9 +21,33 @@ planning-poker style.
 - **Display-only** — nothing from the page flows back into the pi session.
   The moderator relays vote outcomes to the model.
 
-The page is served by a relay on a shared host. The moderator's pi
-connects out to the relay, so teammates do not need network access to
-the moderator's laptop.
+## How it works
+
+Meeting Mirror has three parts:
+
+```
+ moderator (pi + extension) ──WSS──▶ relay ◀──HTTPS── participants (browsers)
+```
+
+- **Moderator:** the pi session that runs the extension. It holds all
+  the state: the transcript, the poll, the votes, and the names of the
+  participants who joined. It connects out to the relay, so the laptop
+  of the moderator needs no open port.
+- **Relay:** a small server on a shared host. It passes messages between
+  the moderator and the browsers, and stores nothing. A room exists on
+  the relay only while its moderator is connected.
+- **Participants:** the people who open the room link in a browser. They
+  read the transcript, join with a name, and vote. Nothing that they do
+  reaches the pi session.
+
+Because the moderator holds all the state:
+
+- When the moderator disconnects, pages show "Waiting for the
+  moderator…". The relay has nothing to show without it.
+- Polls do not survive `/reload`. They live in the memory of the
+  moderator (see [Known limitation](#known-limitation-polls-are-in-memory-only)).
+- Another moderator can take over with only the session file (see
+  [Handoff](#rooms)).
 
 ## Install
 
@@ -79,8 +103,8 @@ A room is a **name + key**.
 - **Link:** `https://<relay-host>/s/<name>?key=<key>`
 
 The extension stores the room in the pi session. If you resume the
-session, or give the session file to another moderator, the team keeps
-the same link. A full link or a stored room includes the relay address,
+session, or give the session file to another moderator, participants
+keep the same link. A full link or a stored room includes the relay address,
 so `MEETING_MIRROR_RELAY` is necessary only to start a new room.
 
 The relay keeps a room only while its moderator is connected. If the
@@ -96,7 +120,7 @@ Pages also reconnect by themselves after a relay restart.
 2. Bob runs `pi --session <file>.jsonl`.
 3. Bob runs `/mirror share`.
 
-The team's link does not change. The page shows the conversation where
+The link for participants does not change. The page shows the conversation where
 Alice stopped. Polls do not carry over.
 
 **Recovery from a wrong share:**
@@ -121,7 +145,8 @@ the correct link.
   the session keeps the room.
 - The key is stored as plain text in the pi session file. pi's `/export`
   HTML file contains it too. **A session file or an export gives the same
-  access as the room link.** Share them only with the team.
+  access as the room link.** Share them only with people who can have
+  the link.
 - If the relay route is reachable from the internet, the key is the only
   protection. Send room links to the meeting, not to a broad channel.
 
@@ -157,8 +182,8 @@ podman build -f relay/Containerfile -t meeting-mirror-relay .
 podman run -p 8080:8080 meeting-mirror-relay
 ```
 
-Put TLS in front of the relay. Browsers and the moderator must connect
-over HTTPS and WSS.
+Put TLS in front of the relay. Participants must connect over HTTPS,
+and the moderator over WSS.
 
 ## Development
 
@@ -182,7 +207,7 @@ Layout:
 | `src/relay-client.ts` | Connection from the moderator's pi to the relay |
 | `src/transport.ts` | Transport interface and `LocalServer` (testing without a relay) |
 | `src/extract.ts` | `/poll` argument parsing and LLM poll extraction |
-| `page/` | The team-facing page (`page.html`, `page.css`, `page.js`) |
+| `page/` | The page for participants (`page.html`, `page.css`, `page.js`) |
 | `relay/src/` | The relay server |
 | `deploy/relay.yaml` | OpenShift resources for the relay |
 

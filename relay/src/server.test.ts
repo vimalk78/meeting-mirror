@@ -362,3 +362,28 @@ describe("adopted browser lifecycle (review fix 6)", () => {
 		await relay.close();
 	});
 });
+
+describe("relay logging (user report: no logs)", () => {
+	it("logs moderator and browser lifecycle events", async () => {
+		const logs: string[] = [];
+		const relay = createRelay({ pageDir: "src", pingMs: 1000, onLog: (m) => logs.push(m) });
+		await new Promise<void>((r) => relay.server.listen(0, "127.0.0.1", r));
+		const port = (relay.server.address() as any).port;
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/presenter`);
+		await new Promise((r) => (ws.on("open", r)));
+		ws.send(JSON.stringify({ t: "hello", room: "ols-log", key: "k" }));
+		await new Promise((r) => setTimeout(r, 50));
+		const ctl = new AbortController();
+		const res = await fetch(`http://127.0.0.1:${port}/s/ols-log/events?key=k&client=c1`, { signal: ctl.signal });
+		await new Promise((r) => setTimeout(r, 100)); // headers arrived = browser connected
+		ctl.abort();
+		res.body!.cancel().catch(() => {});
+		ws.close();
+		await new Promise((r) => setTimeout(r, 150));
+		expect(logs).toContain("moderator attached to ols-log");
+		expect(logs).toContain("browser connected to ols-log");
+		expect(logs).toContain("browser disconnected from ols-log");
+		expect(logs).toContain("moderator detached from ols-log");
+		await relay.close();
+	});
+});

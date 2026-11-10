@@ -16,6 +16,8 @@ export function createRelay(opts: {
 	requestTimeoutMs?: number;
 	maxConnsPerRoom?: number;
 	maxConnsTotal?: number;
+	/** Lifecycle log hook (main.ts wires it to stdout). */
+	onLog?: (message: string) => void;
 }): RelayHandle {
 	const heartbeatMs = opts.heartbeatMs ?? 25000;
 	const pingMs = opts.pingMs ?? 15000;
@@ -24,12 +26,14 @@ export function createRelay(opts: {
 	const maxConnsTotal = opts.maxConnsTotal ?? 2000;
 
 	type Room = {
+		name: string;
 		presenter: { ws: WebSocket; key: string } | null;
 		conns: Map<string, { res: ServerResponse; client: string; key: string }>;
 		pending: Map<number, ServerResponse>;
 		nextReq: number;
 	};
 	const rooms = new Map<string, Room>();
+	const log = (message: string): void => opts.onLog?.(message);
 
 	let totalConns = 0;
 
@@ -55,7 +59,7 @@ export function createRelay(opts: {
 	const ensureRoom = (name: string): Room => {
 		let room = rooms.get(name);
 		if (!room) {
-			room = { presenter: null, conns: new Map(), pending: new Map(), nextReq: 1 };
+			room = { name, presenter: null, conns: new Map(), pending: new Map(), nextReq: 1 };
 			rooms.set(name, room);
 		}
 		return room;
@@ -64,7 +68,10 @@ export function createRelay(opts: {
 	const roomIsEmpty = (room: Room): boolean => !room.presenter && room.conns.size === 0 && room.pending.size === 0;
 	const sweep = (): void => {
 		for (const [name, room] of rooms) {
-			if (roomIsEmpty(room)) rooms.delete(name);
+			if (roomIsEmpty(room)) {
+					rooms.delete(name);
+					log(`room freed: ${name}`);
+				}
 		}
 	};
 
@@ -85,9 +92,13 @@ export function createRelay(opts: {
 			"cache-control": "no-cache",
 			connection: "keep-alive",
 		});
+		// flush headers at once: the browser must not wait for the moderator's
+		// first event before the response even starts
+		res.flushHeaders();
 		const conn = Math.random().toString(36).slice(2) + Date.now().toString(36);
 		const notifyClose = (): void => {
 			room.conns.delete(conn);
+			log(`browser disconnected from ${room.name}`);
 			// always tell the moderator when a browser goes away - the socket
 			// may have been adopted after being parked (presenter arrived later)
 			if (room.presenter) sendToModerator(room, { t: "close", conn });
@@ -96,6 +107,7 @@ export function createRelay(opts: {
 		if (!room.presenter || room.presenter.key !== key) {
 			if (!room.presenter) {
 				// parked: wait for a moderator, validate the key when one arrives
+				log(`browser parked on ${room.name}`);
 				res.write(`data: ${JSON.stringify({ type: "waiting" })}\n\n`);
 				room.conns.set(conn, { res, client, key });
 				res.on("close", notifyClose);
@@ -108,12 +120,14 @@ export function createRelay(opts: {
 		room.conns.set(conn, { res, client, key });
 		sendToModerator(room, { t: "open", conn, client });
 		res.on("close", notifyClose);
+		log(`browser connected to ${room.name}`);
 	};
 
 	// When a moderator attaches, parked browsers with the matching key get opened.
 	const adoptParked = (room: Room): void => {
 		for (const [conn, entry] of [...room.conns]) {
 			if (entry.key === room.presenter?.key) {
+				log(`browser adopted on ${room.name}`);
 				sendToModerator(room, { t: "open", conn, client: entry.client });
 			} else {
 				entry.res.write(`data: ${JSON.stringify({ type: "invalid_key" })}\n\n`);
@@ -143,6 +157,7 @@ export function createRelay(opts: {
 		const drop = (): void => {
 			clearInterval(pingTimer);
 			if (room && room.presenter?.ws === ws) {
+				log(`moderator detached from ${room.name}`);
 				room.presenter = null;
 				broadcastToRoom(room, { type: "waiting" });
 				for (const res of room.pending.values()) {
@@ -179,11 +194,13 @@ export function createRelay(opts: {
 						// same key: the new socket replaces the stale one
 						const stale = target.presenter.ws;
 						target.presenter = { ws, key: msg.key };
+						log(`moderator replaced on ${target.name}`);
 						stale.send(JSON.stringify({ t: "replaced" }));
 						stale.close();
 					} else {
 						target.presenter = { ws, key: msg.key };
 					}
+					log(`moderator attached to ${target.name}`);
 					room = target;
 					ws.send(JSON.stringify({ t: "welcome" }));
 					adoptParked(room);

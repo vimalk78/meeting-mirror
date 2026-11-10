@@ -189,3 +189,16 @@ describe("real page markup (review fix 2)", () => {
 		expect(document.getElementById("members")!.textContent).toContain("Ann ✓");
 	});
 });
+
+describe("poll status updates live (user report: 0 votes in)", () => {
+	it("increments the poll status line as members vote, with singular plural", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		send({ type: "poll_open", poll, anchor: 0 });
+		expect(document.getElementById("poll-status")!.textContent).toBe("0 votes in · hidden until reveal");
+		send({ type: "members", members: [{ name: "Alice", voted: true }], voteCount: 1 });
+		expect(document.getElementById("poll-status")!.textContent).toBe("1 vote in · hidden until reveal");
+		send({ type: "members", members: [{ name: "Alice", voted: true }, { name: "Bob", voted: true }], voteCount: 2 });
+		expect(document.getElementById("poll-status")!.textContent).toBe("2 votes in · hidden until reveal");
+	});
+});

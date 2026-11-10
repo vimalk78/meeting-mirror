@@ -204,6 +204,10 @@ function positionPollCard(anchor) {
 	transcript.insertBefore(card, messages[Math.min(anchor, messages.length)] ?? null);
 }
 
+function pollStatusText(count) {
+	return `${count} vote${count === 1 ? "" : "s"} in · hidden until reveal`;
+}
+
 function renderPollCard(poll, initialCount = 0, anchor = document.querySelectorAll("#transcript > .message").length) {
 	positionPollCard(anchor);
 	const buttons = poll.options
@@ -213,7 +217,7 @@ function renderPollCard(poll, initialCount = 0, anchor = document.querySelectorA
 		<div class="poll-label">VOTE — ${escapeHtml(poll.question)}</div>
 		<div class="poll-options">${buttons}</div>
 		<input id="poll-remark" class="poll-remark-input" type="text" maxlength="500" placeholder="Optional remark…">
-		<div class="poll-status" id="poll-status">${initialCount} votes in · hidden until reveal</div>`;
+		<div class="poll-status" id="poll-status">${pollStatusText(initialCount)}</div>`;
 	pollActive = true;
 	for (const btn of document.querySelectorAll(".poll-option")) {
 		btn.addEventListener("click", () => castVote(btn.dataset.key));
@@ -326,6 +330,12 @@ function handleEvent(event) {
 			const text = membersText(event);
 			el.textContent = text;
 			el.classList.toggle("hidden", text === "");
+		}
+		// a vote changes the member list before reveal: keep the poll card's
+		// count in sync without exposing who voted
+		if (pollActive && typeof event.voteCount === "number") {
+			const status = document.getElementById("poll-status");
+			if (status) status.textContent = pollStatusText(event.voteCount);
 		}
 	}
 }

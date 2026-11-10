@@ -233,3 +233,35 @@ describe("all-voted notice (moderator guidance)", () => {
 		expect(allVotedNotice(snap({ voteCount: 2 }), { members: [], voteCount: 2 })).toBe(null);
 	});
 });
+
+describe("EventSource failure (code review: no recovery after relay restart)", () => {
+	it("error with CLOSED readyState shows waiting and reconnects", async () => {
+		await reset("/s/ols-4596?key=k1");
+		const sources: any[] = [];
+		const OrigES = (globalThis as any).EventSource;
+		vi.stubGlobal(
+			"EventSource",
+			class extends OrigES {
+				constructor(src: string) {
+					super(src);
+					sources.push(this);
+				}
+			},
+		);
+		await boot("/s/ols-4596?key=k1");
+		expect(sources).toHaveLength(1);
+
+		(stream as any).readyState = 2;
+		(OrigES as any).CLOSED = 2;
+		(stream as any).onerror?.(new Event("error"));
+		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(false);
+
+		// reconnect happens after the backoff
+		await new Promise((r) => setTimeout(r, 1200));
+		expect(sources.length).toBeGreaterThan(1);
+
+		// a snapshot on the new stream hides the banner again
+		send({ type: "snapshot", you: null, snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(true);
+	});
+});

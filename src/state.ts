@@ -91,12 +91,15 @@ export class MirrorState {
 		if (!this.poll) {
 			throw new Error("No poll is open.");
 		}
-		const events = this.emit({ type: "poll_close" });
+		// Clear the poll state before emitting: subscribers (Hub) rebuild the
+		// member list when they see this event, and it must not reflect the
+		// closed poll (stale vote ticks, a stale vote count, and a false
+		// "all voted" notice in the moderator's terminal).
 		this.poll = null;
 		this.pollAnchor = null;
 		this.revealed = null;
 		this.votes.clear();
-		return events;
+		return this.emit({ type: "poll_close" });
 	}
 
 	/** Names that voted in the current poll, in insertion order. */

@@ -23,8 +23,8 @@ else
 		read -r relay_url
 		if [ -n "${relay_url}" ]; then
 			if ! grep -q "MEETING_MIRROR_RELAY" "${HOME}/.bashrc" 2>/dev/null; then
-				echo "export MEETING_MIRROR_RELAY="${relay_url}"" >> "${HOME}/.bashrc"
-				echo "Added export to ~/.bashrc. Start a new shell or: export MEETING_MIRROR_RELAY="${relay_url}""
+				printf 'export MEETING_MIRROR_RELAY="%s"\n' "${relay_url}" >> "${HOME}/.bashrc"
+				echo "Added export to ~/.bashrc. Start a new shell or: export MEETING_MIRROR_RELAY=${relay_url}"
 			fi
 		fi
 	fi

@@ -236,3 +236,49 @@ describe("busy during reconnect (review fix 4)", () => {
 		await relay2.close();
 	});
 });
+
+describe("code review fixes", () => {
+	it("replaced: hub connections are torn down so no ghost members remain", async () => {
+		const base = await startRelay();
+		const { hub } = setup(base);
+		client = new RelayClient(hub, room(base), {});
+		await client.start();
+		const browser = browserSse(base, "k1", "client-1");
+		await browser.ready;
+		await new Promise((r) => setTimeout(r, 50));
+		hub.identify({ clientId: "client-1", username: "Alice" });
+		await new Promise((r) => setTimeout(r, 50));
+		expect(hub.memberList().members).toEqual([{ name: "Alice", voted: false }]);
+
+		// a second client with the same key replaces this one
+		const { hub: hub2 } = setup(base);
+		const client2 = new RelayClient(hub2, room(base), {});
+		await client2.start();
+		await new Promise((r) => setTimeout(r, 100));
+
+		expect(hub.memberList().members).toEqual([]);
+		await client2.stop();
+	});
+
+	it("relay rejects the hello (error reply): start() rejects instead of hanging", async () => {
+		const base = await startRelay();
+		const { hub } = setup(base);
+		const bad = { relay: base, name: "BAD NAME", key: "k1" };
+		client = new RelayClient(hub, bad, {});
+		await expect(client.start()).rejects.toThrow(/invalid room name/i);
+	});
+
+	it("relay never sends welcome: start() rejects after retries instead of hanging", async () => {
+		const { WebSocketServer } = await import("ws");
+		const wss = new WebSocketServer({ port: 0 });
+		const port = (wss.address() as { port: number }).port;
+		const { hub } = setup(`http://127.0.0.1:${port}`);
+		client = new RelayClient(hub, { relay: `http://127.0.0.1:${port}`, name: "ols-test", key: "k1" }, {
+			backoffMs: [10],
+			maxConnectAttempts: 2,
+			welcomeTimeoutMs: 50,
+		});
+		await expect(client.start()).rejects.toThrow(/relay unreachable|welcome|timed out/i);
+		wss.close();
+	});
+});

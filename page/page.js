@@ -372,8 +372,24 @@ function rebuildTranscript(messages) {
 
 function connectEvents() {
 	const es = new EventSource(`${api("/events")}&client=${encodeURIComponent(CLIENT_ID)}`);
-	es.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
+	es.onmessage = (ev) => {
+		reconnectAttempt = 0;
+		handleEvent(JSON.parse(ev.data));
+	};
+	es.onerror = () => {
+		// The stream dropped or the relay is restarting. Tell the reader at
+		// once; a snapshot after reconnecting hides the banner again.
+		document.getElementById("waiting")?.classList.remove("hidden");
+		if (es.readyState === EventSource.CLOSED) {
+			// EventSource gave up (e.g. the relay answered non-200 while its
+			// pod restarts) and will not retry on its own: reconnect ourselves
+			// with capped exponential backoff.
+			const delay = Math.min(30000, 1000 * 2 ** reconnectAttempt++);
+			setTimeout(connectEvents, delay);
+		}
+	};
 }
+let reconnectAttempt = 0;
 
 function keyboardShortcuts() {
 	document.addEventListener("keydown", (e) => {

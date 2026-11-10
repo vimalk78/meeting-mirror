@@ -387,3 +387,32 @@ describe("relay logging (user report: no logs)", () => {
 		await relay.close();
 	});
 });
+
+describe("moderator reply validation (code review: crash on bad status)", () => {
+	it("non-integer reply status → 502 to the browser, relay keeps serving", async () => {
+		const { base, wsUrl } = await startRelay();
+		const mod = await connectModerator(wsUrl);
+		send(mod.ws, { t: "hello", room: "ols-4596", key: "k1" });
+		await mod.next();
+
+		const replyPromise = fetch(`${base}/s/ols-4596/identify?key=k1`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ clientId: "c1", username: "Ann" }),
+		});
+		const reqMsg = await mod.next();
+		send(mod.ws, { t: "reply", req: reqMsg.req, status: "oops" });
+		expect((await replyPromise).status).toBe(502);
+
+		// the relay is still alive: a well-formed round-trip works
+		const okPromise = fetch(`${base}/s/ols-4596/identify?key=k1`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ clientId: "c1", username: "Ann" }),
+		});
+		const reqMsg2 = await mod.next();
+		send(mod.ws, { t: "reply", req: reqMsg2.req, status: 200, body: { name: "Ann" } });
+		expect((await okPromise).status).toBe(200);
+		mod.ws.close();
+	});
+});

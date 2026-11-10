@@ -213,3 +213,21 @@ describe("name handover (review fix 5)", () => {
 		expect(hub.memberList().members.map((m) => m.name)).toEqual(["John"]);
 	});
 });
+
+describe("poll_close clears member vote state (code review)", () => {
+	it("members event after closePoll shows no ticks and voteCount null", () => {
+		const state = new MirrorState();
+		const hub = new Hub(state);
+		hub.open("c1");
+		hub.identify({ clientId: "c1", username: "Alice" });
+		state.openPoll({ question: "q", options: [{ key: "A", label: "a" }, { key: "B", label: "b" }] });
+		hub.vote({ clientId: "c1", choice: "A" });
+		const events: any[] = [];
+		hub.subscribe((e: unknown) => events.push(e));
+		state.closePoll();
+		const members = events.find((e: any) => e.type === "members");
+		expect(members).toBeDefined();
+		expect(members.members).toEqual([{ name: "Alice", voted: false }]);
+		expect(members.voteCount).toBeNull();
+	});
+});

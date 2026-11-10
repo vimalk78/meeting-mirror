@@ -5,6 +5,9 @@ import { roomLink } from "./rooms.js";
 
 export class RoomBusyError extends Error {}
 
+/** The relay refused the connection (e.g. invalid room name): retrying cannot help. */
+export class RelayRejectedError extends Error {}
+
 /**
  * Transport that connects the local Hub to a relay over an outbound
  * WebSocket. The moderator holds all state; the relay only routes.
@@ -26,6 +29,8 @@ export class RelayClient {
 			backoffMs?: number[];
 			/** Failed initial connects before start() gives up and rejects. */
 			maxConnectAttempts?: number;
+			/** How long to wait for the relay's welcome before treating the connect as failed. */
+			welcomeTimeoutMs?: number;
 		} = {},
 	) {}
 
@@ -75,7 +80,12 @@ export class RelayClient {
 			const ws = new WebSocket(`${origin}/presenter`);
 			this.ws = ws;
 
+			const welcomeTimer = setTimeout(() => {
+				fail(new Error(`relay did not send a welcome in time: ${this.room.relay}`));
+			}, this.opts.welcomeTimeoutMs ?? 10000);
+
 			const fail = (err: unknown): void => {
+				clearTimeout(welcomeTimer);
 				ws.removeAllListeners();
 				if (this.stopped) {
 					resolve();
@@ -92,6 +102,11 @@ export class RelayClient {
 						resolve();
 						return;
 					}
+					reject(err);
+					return;
+				}
+				if (err instanceof RelayRejectedError) {
+					// the relay refused us for a reason retrying cannot fix
 					reject(err);
 					return;
 				}
@@ -115,6 +130,7 @@ export class RelayClient {
 				}
 				switch (msg.t) {
 					case "welcome": {
+						clearTimeout(welcomeTimer);
 						this.hubUnsubscribe?.();
 						this.hubUnsubscribe = this.hub.subscribe((event) => this.onHubEvent(event));
 						this.reconnectAttempt = 0; // backoff starts over after a welcome
@@ -129,11 +145,17 @@ export class RelayClient {
 					}
 					case "replaced": {
 						this.stopped = true; // do not reconnect
-						this.hubUnsubscribe?.();
-						this.hubUnsubscribe = null;
+						// close the hub's browser connections too, or the members they
+						// registered stay "present" as ghosts in a later share
+						this.teardownHub();
+						clearTimeout(welcomeTimer);
 						ws.close();
 						this.opts.onLost?.("replaced");
 						resolve();
+						break;
+					}
+					case "error": {
+						fail(new RelayRejectedError(`Relay rejected the connection: ${msg.reason ?? "unknown reason"}`));
 						break;
 					}
 					case "open": {
@@ -164,11 +186,18 @@ export class RelayClient {
 			});
 
 			ws.on("close", () => {
-				if (this.stopped) return;
+				if (this.stopped) {
+					clearTimeout(welcomeTimer);
+					return;
+				}
 				// dropped after being welcomed: reconnect with backoff
 				if (this.hubUnsubscribe) {
 					this.teardownHub();
 					this.scheduleReconnect();
+				} else if (!this.everWelcomed) {
+					// closed before any welcome: treat as a failed connect so the
+					// retry/give-up logic (not a hang) decides what happens next
+					fail(new Error("relay closed the connection before welcoming us"));
 				}
 			});
 		});

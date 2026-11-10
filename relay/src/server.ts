@@ -172,13 +172,7 @@ export function createRelay(opts: {
 		ws.on("close", drop);
 		ws.on("error", drop);
 
-		ws.on("message", (data) => {
-			let msg: any;
-			try {
-				msg = JSON.parse(String(data));
-			} catch {
-				return;
-			}
+		const dispatch = (msg: any): void => {
 			if (!room) {
 				if (msg.t === "hello" && typeof msg.room === "string" && typeof msg.key === "string") {
 					if (!/^[a-z0-9-]{3,30}$/.test(msg.room)) {
@@ -216,9 +210,30 @@ export function createRelay(opts: {
 				const res = room.pending.get(msg.req);
 				if (res) {
 					room.pending.delete(msg.req);
-					res.writeHead(msg.status, { "content-type": "application/json" });
+					// the status arrives over the wire: an invalid value would
+					// throw inside writeHead and kill the relay
+					const status =
+						typeof msg.status === "number" && Number.isInteger(msg.status) && msg.status >= 100 && msg.status <= 599
+						? msg.status
+						: 502;
+					res.writeHead(status, { "content-type": "application/json" });
 					res.end(JSON.stringify(msg.body ?? null));
 				}
+			}
+		};
+
+		ws.on("message", (data) => {
+			let msg: any;
+			try {
+				msg = JSON.parse(String(data));
+			} catch {
+				return;
+			}
+			try {
+				dispatch(msg);
+			} catch (err) {
+				// a malformed moderator message must never take the relay down
+				log(`error handling moderator message: ${err instanceof Error ? err.message : err}`);
 			}
 		});
 	};

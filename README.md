@@ -28,12 +28,12 @@ bash install.sh
 ```
 
 This symlinks the extension into `~/.pi/agent/extensions/meeting-mirror/`.
-Start (or restart) pi; you'll see `Meeting Mirror page: http://localhost:7433`
-when a session starts.
+Start (or restart) pi; a new session prints a note that it is private until
+you run `/mirror share`.
 
-Requires the extension's dev dependencies for nothing at runtime — pi loads
-the TypeScript directly. `npm install` is only needed to run the test suite
-(`npx vitest run`).
+Requires Node's `ws` package at runtime: run `npm install` once after
+cloning (and after pulling changes that touch `package.json`). The same
+`npm install` also sets up the test suite (`npx vitest run`).
 
 ## Commands
 
@@ -51,15 +51,13 @@ Sessions are **private by default** — nothing is served until you share:
 | `/poll Q \| opt \| opt` | Manual poll (pipe syntax) |
 | `/reveal` | Reveal votes on the page |
 | `/poll-close` | Close the current poll |
-| `/mirror` | Show the page URL and poll status |
 
 ## Team access
 
 The page is served from the presenter's machine on port 7433 (next free
 port if taken). Teammates need network access to that machine — e.g. the
-same office LAN or VPN. The transport is pluggable by design: a relay mode
-for internal hosts where peer-to-peer access is blocked is planned (see the
-[design doc](docs/superpowers/specs/2026-11-03-meeting-mirror-design.md)).
+same office LAN or VPN. For remote teams, use relay mode (below) instead.
+Local mode is kept for solo testing.
 
 **Known limitation — polls are in-memory only.** Poll state (question,
 options, votes) lives in the extension's memory: it does not survive
@@ -127,7 +125,7 @@ bind a specific interface instead of all of them.
 
 ```bash
 npm install
-npx vitest run   # 55 tests
+npx vitest run   # 154 tests
 npx tsc --noEmit # type check (pure modules; index.ts is checked by pi itself)
 ```
 

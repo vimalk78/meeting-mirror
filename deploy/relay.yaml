@@ -1,0 +1,103 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: relay
+  labels:
+    app: meeting-mirror-relay
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: relay
+  labels:
+    app: meeting-mirror-relay
+spec:
+  runPolicy: Serial
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: relay/Containerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: relay:latest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay
+  labels:
+    app: meeting-mirror-relay
+  annotations:
+    # auto-roll the pods when a new relay:latest is built by the BuildConfig
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"relay:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"relay\")].image"}]
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: meeting-mirror-relay
+  template:
+    metadata:
+      labels:
+        app: meeting-mirror-relay
+    spec:
+      containers:
+        - name: relay
+          image: relay:latest
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relay
+  labels:
+    app: meeting-mirror-relay
+spec:
+  selector:
+    app: meeting-mirror-relay
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: relay
+  labels:
+    app: meeting-mirror-relay
+  annotations:
+    # SSE and WebSocket need long-lived connections
+    haproxy.router.openshift.io/timeout: 1h
+spec:
+  to:
+    kind: Service
+    name: relay
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

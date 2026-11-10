@@ -1,0 +1,26 @@
+# Build stage: compile the relay. Runs as root because the UBI nodejs images
+# default to an unprivileged user that cannot write to /app.
+FROM registry.access.redhat.com/ubi9/nodejs-22 AS builder
+USER 0
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY relay/package.json relay/package.json
+RUN npm ci --workspace relay --include-workspace-root=false
+COPY relay/tsconfig.json relay/tsconfig.json
+COPY relay/src relay/src
+RUN npx tsc -p relay
+
+# Runtime stage
+FROM registry.access.redhat.com/ubi9/nodejs-22-minimal
+WORKDIR /opt/app
+ENV NODE_ENV=production PORT=8080 PAGE_DIR=/opt/app/page
+COPY --from=builder /app/relay/dist relay/dist
+COPY --from=builder /app/node_modules node_modules
+COPY package.json ./
+COPY relay/package.json relay/package.json
+COPY page/ page/
+USER 0
+RUN npm prune --omit=dev
+USER 1001
+EXPOSE 8080
+CMD ["node", "relay/dist/main.js"]

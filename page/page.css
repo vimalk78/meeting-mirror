@@ -1,0 +1,238 @@
+:root {
+	--accent: #4a7a4a;
+	--accent-dark: #2d5a2d;
+	--accent-bg: #f2f8f2;
+	--bg: #faf9f6;
+	--fg: #2a2a2a;
+	--muted: #8a8a8a;
+	--track: #e0e0e0;
+}
+body {
+	font-family: Georgia, "Times New Roman", serif;
+	background: var(--bg);
+	color: var(--fg);
+	margin: 0;
+	line-height: 1.7;
+}
+.transcript {
+	max-width: 680px;
+	margin: 0 auto;
+	/* bottom padding keeps the last message clear of the fixed overlays
+	   (jump button, member line) so text never flows behind them */
+	padding: 24px 16px 72px;
+}
+.message { margin-bottom: 22px; }
+.message .label {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 11px;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+.message .text p { margin: 4px 0 0; }
+.message.user .text {
+	border-left: 3px solid #d0d0d0;
+	padding-left: 14px;
+}
+.message code {
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.9em;
+	background: #f0eee8;
+	padding: 1px 4px;
+	border-radius: 3px;
+}
+
+/* Poll card — accent-colored, inline at the end of the transcript */
+.poll-card {
+	background: var(--accent-bg);
+	border: 1px solid var(--accent);
+	border-radius: 8px;
+	padding: 14px 16px;
+	margin: 8px 0 24px;
+	font-family: -apple-system, "Segoe UI", sans-serif;
+}
+.poll-card:empty { display: none; }
+.poll-label {
+	font-size: 11px;
+	color: var(--accent-dark);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-bottom: 10px;
+}
+.poll-options {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.poll-option {
+	font: inherit;
+	font-size: 14px;
+	text-align: left;
+	padding: 8px 12px;
+	border: 1px solid var(--accent);
+	border-radius: 6px;
+	background: #fff;
+	cursor: pointer;
+}
+.poll-option:hover { background: #e8f2e8; }
+.poll-option.selected {
+	background: var(--accent);
+	color: #fff;
+}
+.poll-remark-input {
+	width: 100%;
+	box-sizing: border-box;
+	font: inherit;
+	font-size: 13px;
+	padding: 6px 10px;
+	margin-top: 8px;
+	border: 1px solid var(--accent);
+	border-radius: 6px;
+}
+.poll-status {
+	font-size: 12px;
+	color: var(--accent-dark);
+	margin-top: 8px;
+}
+.poll-closed-note {
+	font-size: 13px;
+	color: var(--muted);
+	margin-top: 10px;
+}
+
+/* Tally */
+.tally-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 6px;
+}
+.tally-key { font-weight: bold; width: 22px; }
+.tally-bar-track {
+	flex: 1;
+	background: var(--track);
+	border-radius: 3px;
+	height: 22px;
+	position: relative;
+}
+.tally-bar {
+	height: 100%;
+	background: var(--accent);
+	border-radius: 3px;
+}
+.tally-names {
+	position: absolute;
+	right: 8px;
+	top: 2px;
+	font-size: 12px;
+	color: #333;
+}
+.tally-count { width: 18px; text-align: right; font-size: 13px; }
+.tally-remarks {
+	border-top: 1px solid #c9d6c9;
+	padding-top: 10px;
+	margin-top: 8px;
+	font-size: 14px;
+}
+.tally-remark { margin-bottom: 6px; }
+
+/* Jump to latest */
+.jump-latest {
+	position: fixed;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 16px;
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 13px;
+	padding: 6px 14px;
+	border: 1px solid var(--accent);
+	border-radius: 16px;
+	background: #fff;
+	cursor: pointer;
+	z-index: 5;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.jump-latest.hidden { display: none; }
+
+/* Identify overlay */
+.overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(250, 249, 246, 0.96);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+.overlay.hidden { display: none; }
+.overlay-card { text-align: center; padding: 32px; }
+.overlay-card h1 {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 20px;
+}
+.overlay-card input {
+	font: inherit;
+	padding: 6px 10px;
+	margin-right: 8px;
+}
+.overlay-card button {
+	font: inherit;
+	padding: 6px 14px;
+	cursor: pointer;
+}
+
+@media (max-width: 600px) {
+	.tally-names { display: none; }
+}
+
+/* Identity chip — who you are on this page, click to switch */
+.identity-chip {
+	position: fixed;
+	top: 12px;
+	right: 12px;
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 12px;
+	color: #555;
+	background: #fff;
+	border: 1px solid #ccc;
+	border-radius: 14px;
+	padding: 4px 12px;
+	z-index: 6;
+	cursor: pointer;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.identity-chip:hover { border-color: var(--accent); }
+.identity-chip.hidden { display: none; }
+.identify-error { color: #a03030; min-height: 1.2em; margin: 4px 0; font-size: 0.9em; }
+.banner {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 13px;
+	color: var(--muted);
+	text-align: center;
+	background: var(--bg);
+	position: fixed;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 8px;
+	z-index: 10;
+}
+.banner.hidden { display: none; }
+.members {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 12px;
+	color: var(--muted);
+	background: var(--bg);
+	/* docked to the bottom-left corner, beside (not over) the reading
+	   column, so it never hovers above the newest text */
+	position: fixed;
+	left: 16px;
+	bottom: 16px;
+	padding: 0 8px;
+	z-index: 10;
+	max-width: 24vw;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.members.hidden { display: none; }

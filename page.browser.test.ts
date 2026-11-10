@@ -202,3 +202,14 @@ describe("poll status updates live (user report: 0 votes in)", () => {
 		expect(document.getElementById("poll-status")!.textContent).toBe("2 votes in · hidden until reveal");
 	});
 });
+
+describe("member line stays visible (user report: scrolls away)", () => {
+	it("page.css pins .members and .banner like the jump button", () => {
+		const css = readFileSync("page.css", "utf8");
+		const rule = (sel: string): string => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
+		for (const sel of [".members", ".banner"]) {
+			expect(rule(sel), `${sel} must be position: fixed`).toMatch(/position:\s*fixed/);
+			expect(rule(sel), `${sel} must pin to the bottom`).toMatch(/bottom:/);
+		}
+	});
+});

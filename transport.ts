@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { MirrorState, MirrorEvent } from "./state.js";
+import type { Hub, HubEvent, SnapshotEvent } from "./hub.js";
 
 export interface Transport {
 	start(): Promise<void>;
 	stop(): Promise<void>;
 	readonly url: string;
+	readonly pageUrl: string;
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -22,20 +23,15 @@ export class LocalServer implements Transport {
 	private server: Server | null = null;
 	private unsubscribe: (() => void) | null = null;
 	private sseClients = new Set<ServerResponse>();
+	private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	private chosenPort = 0;
-	private tokens = new Map<string, string>(); // token → username
-	/** Random per-instance id: lets pages detect a server restart. */
-	readonly sessionId = randomUUID();
-	/** Random session key: the share URL is the credential. */
+
+	/** Random per-instance key: the share URL is the credential. */
 	readonly key = randomUUID();
-	/** Share URL including the key, for /mirror share output. */
-	get pageUrl(): string {
-		return `${this.url}/?key=${this.key}`;
-	}
 
 	constructor(
-		private state: MirrorState,
-		private opts: { port?: number; host?: string } = {},
+		private hub: Hub,
+		private opts: { port?: number; host?: string; heartbeatMs?: number } = {},
 	) {}
 
 	get url(): string {
@@ -43,9 +39,15 @@ export class LocalServer implements Transport {
 		return `http://${host}:${this.chosenPort}`;
 	}
 
+	get pageUrl(): string {
+		return `${this.url}/?key=${this.key}`;
+	}
+
 	async start(): Promise<void> {
 		const startAt = this.opts.port ?? 7433;
-		const candidates = this.opts.port ? [this.opts.port] : [startAt, startAt + 1, startAt + 2, startAt + 3, startAt + 4, startAt + 5, startAt + 6, startAt + 7, startAt + 8, startAt + 9, 0];
+		const candidates = this.opts.port
+			? [this.opts.port]
+			: [startAt, startAt + 1, startAt + 2, startAt + 3, startAt + 4, startAt + 5, startAt + 6, startAt + 7, startAt + 8, startAt + 9, 0];
 		let lastError: unknown = null;
 		for (const port of candidates) {
 			try {
@@ -67,13 +69,21 @@ export class LocalServer implements Transport {
 				this.server = server;
 				const addr = server.address();
 				this.chosenPort = typeof addr === "object" && addr ? addr.port : port;
-				this.unsubscribe = this.state.subscribe((event) => this.broadcast(event));
+				this.unsubscribe = this.hub.subscribe((event) => this.broadcast(event));
+				const hb = this.opts.heartbeatMs ?? 25000;
+				this.heartbeatTimer = setInterval(() => {
+					for (const res of this.sseClients) res.write(": ping\n\n");
+				}, hb);
 				resolve();
 			});
 		});
 	}
 
 	async stop(): Promise<void> {
+		if (this.heartbeatTimer) {
+			clearInterval(this.heartbeatTimer);
+			this.heartbeatTimer = null;
+		}
 		this.unsubscribe?.();
 		this.unsubscribe = null;
 		const server = this.server;
@@ -88,47 +98,58 @@ export class LocalServer implements Transport {
 
 	private handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = new URL(req.url ?? "/", "http://local");
-		if (!this.isAuthorized(req, url)) {
-			res.writeHead(403, { "content-type": "application/json" });
-			res.end(JSON.stringify({ error: "invalid or missing session key" }));
-			return;
-		}
 		if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-			this.serveFile(res, "page.html");
+			if (this.isAuthorized(req, url)) {
+				this.serveFile(res, "page.html");
+			} else {
+				this.reject(res);
+			}
 		} else if (req.method === "GET" && url.pathname === "/page.css") {
 			this.serveFile(res, "page.css");
 		} else if (req.method === "GET" && url.pathname === "/page.js") {
 			this.serveFile(res, "page.js");
 		} else if (req.method === "GET" && url.pathname === "/events") {
-			this.openSse(res);
+			if (this.isAuthorized(req, url)) {
+				this.openSse(req, url, res);
+			} else {
+				this.reject(res);
+			}
 		} else if (req.method === "POST" && url.pathname === "/vote") {
-			this.handleVote(req, res);
+			if (!this.isAuthorized(req, url)) {
+				this.reject(res);
+			} else {
+				this.handleJson(req, res, (body) => this.hub.vote(body));
+			}
 		} else if (req.method === "POST" && url.pathname === "/identify") {
-			this.handleIdentify(req, res);
+			if (!this.isAuthorized(req, url)) {
+				this.reject(res);
+			} else {
+				this.handleJson(req, res, (body) => this.hub.identify(body));
+			}
 		} else {
 			res.writeHead(404, { "content-type": "text/plain" });
 			res.end("not found");
 		}
 	}
 
+	private reject(res: ServerResponse): void {
+		res.writeHead(403, { "content-type": "application/json" });
+		res.end(JSON.stringify({ error: "invalid or missing session key" }));
+	}
+
 	/**
 	 * A request is authorized when it carries the session key as a query
 	 * parameter (first page load, API calls) or as the mm_key cookie set on
-	 * that first load (assets, reloads, same-origin fetches).
+	 * that first load (assets, reloads, same-origin fetches). Assets are
+	 * exempt: they carry nothing.
 	 */
-	/** Cookie name is scoped per session: browser cookie jars ignore ports,
-	 * so two same-host sessions must not share one cookie name. */
-	private get cookieName(): string {
-		return `mm_key_${this.sessionId.slice(0, 8)}`;
-	}
-
 	private isAuthorized(req: IncomingMessage, url: URL): boolean {
 		if (url.searchParams.get("key") === this.key) return true;
 		const cookie = req.headers.cookie ?? "";
 		return cookie
 			.split(";")
 			.map((part) => part.trim())
-			.some((part) => part === `${this.cookieName}=${this.key}`);
+			.some((part) => part === `mm_key_${this.hub.sessionId.slice(0, 8)}=${this.key}`);
 	}
 
 	private serveFile(res: ServerResponse, name: string): void {
@@ -140,7 +161,7 @@ export class LocalServer implements Transport {
 				"cache-control": "no-cache",
 			};
 			if (name === "page.html") {
-				headers["set-cookie"] = `${this.cookieName}=${this.key}; Path=/; HttpOnly; SameSite=Strict`;
+				headers["set-cookie"] = `mm_key_${this.hub.sessionId.slice(0, 8)}=${this.key}; Path=/; HttpOnly; SameSite=Strict`;
 			}
 			res.writeHead(200, headers);
 			res.end(content);
@@ -150,106 +171,57 @@ export class LocalServer implements Transport {
 		}
 	}
 
-	private openSse(res: ServerResponse): void {
+	private openSse(req: IncomingMessage, url: URL, res: ServerResponse): void {
+		const client = url.searchParams.get("client") ?? "";
+		if (client === "") {
+			res.writeHead(400, { "content-type": "application/json" });
+			res.end(JSON.stringify({ error: "client parameter required" }));
+			return;
+		}
 		res.writeHead(200, {
 			"content-type": "text/event-stream",
 			"cache-control": "no-cache",
 			connection: "keep-alive",
 		});
-		res.write(
-			`data: ${JSON.stringify({ type: "snapshot", sessionId: this.sessionId, snapshot: this.state.getSnapshot() })}\n\n`,
-		);
+		let connId: string;
+		try {
+			const opened = this.hub.open(client);
+			connId = opened.connId;
+			res.write(`data: ${JSON.stringify(opened.snapshot)}\n\n`);
+		} catch {
+			res.writeHead(503, { "content-type": "application/json" });
+			res.end(JSON.stringify({ error: "too many connections" }));
+			return;
+		}
 		this.sseClients.add(res);
-		reqCloseCleanup(res, () => this.sseClients.delete(res));
+		res.on("close", () => {
+			this.sseClients.delete(res);
+			this.hub.close(connId);
+		});
 	}
 
-	private broadcast(event: MirrorEvent): void {
+	private broadcast(event: HubEvent | SnapshotEvent): void {
 		const frame = `data: ${JSON.stringify(event)}\n\n`;
 		for (const res of this.sseClients) {
 			res.write(frame);
 		}
 	}
 
-	private handleVote(req: IncomingMessage, res: ServerResponse): void {
-		if (!isJsonContentType(req)) {
+	private handleJson(
+		req: IncomingMessage,
+		res: ServerResponse,
+		apply: (body: unknown) => { status: number; body: unknown },
+	): void {
+		if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
 			res.writeHead(415, { "content-type": "application/json" });
 			res.end(JSON.stringify({ error: "content-type must be application/json" }));
 			return;
 		}
 		readJson(req)
 			.then((body) => {
-				const { token, username, choice, remark } = body as {
-					token?: string;
-					username?: string;
-					choice?: string;
-					remark?: string;
-				};
-				if (typeof token !== "string" || token === "") {
-					res.writeHead(401, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "token required (identify first)" }));
-					return;
-				}
-				if (typeof username !== "string" || username.trim() === "" || typeof choice !== "string") {
-					res.writeHead(400, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "username and choice required" }));
-					return;
-				}
-				const name = username.trim();
-				if (this.tokens.get(token) !== name) {
-					res.writeHead(403, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "token does not match username" }));
-					return;
-				}
-				try {
-					const trimmedRemark = typeof remark === "string" ? remark.slice(0, 500) : "";
-					this.state.castVote(name, choice, trimmedRemark);
-					res.writeHead(200, { "content-type": "application/json" });
-					res.end(JSON.stringify({ ok: true }));
-				} catch (err) {
-					res.writeHead(409, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: err instanceof Error ? err.message : "vote rejected" }));
-				}
-			})
-			.catch((err) => {
-				if (err instanceof PayloadTooLargeError) {
-					res.writeHead(413, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "body too large" }), () => req.destroy());
-				} else {
-					res.writeHead(400, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "invalid JSON body" }));
-				}
-			});
-	}
-
-	private handleIdentify(req: IncomingMessage, res: ServerResponse): void {
-		if (!isJsonContentType(req)) {
-			res.writeHead(415, { "content-type": "application/json" });
-			res.end(JSON.stringify({ error: "content-type must be application/json" }));
-			return;
-		}
-		readJson(req)
-			.then((body) => {
-				const { username } = body as { username?: string };
-				if (typeof username !== "string" || username.trim() === "") {
-					res.writeHead(400, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "username required" }));
-					return;
-				}
-				const name = username.trim().slice(0, 40);
-				if (this.tokens.size >= 500) {
-					res.writeHead(503, { "content-type": "application/json" });
-					res.end(JSON.stringify({ error: "too many identities this session" }));
-					return;
-				}
-				// Identify is idempotent and per-client: re-identifying a name
-			// issues an additional token (a returning teammate after a server
-				// restart, or a second tab of the same user). Votes are keyed by
-				// username in the poll state, so multiple tokens per name are
-				// safe; unknown tokens still cannot vote.
-				const token = randomUUID();
-				this.tokens.set(token, name);
-				res.writeHead(200, { "content-type": "application/json" });
-				res.end(JSON.stringify({ token }));
+				const reply = apply(body);
+				res.writeHead(reply.status, { "content-type": "application/json" });
+				res.end(JSON.stringify(reply.body));
 			})
 			.catch((err) => {
 				if (err instanceof PayloadTooLargeError) {
@@ -264,10 +236,6 @@ export class LocalServer implements Transport {
 }
 
 class PayloadTooLargeError extends Error {}
-
-function isJsonContentType(req: IncomingMessage): boolean {
-	return (req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json");
-}
 
 function readJson(req: IncomingMessage): Promise<unknown> {
 	return new Promise((resolve, reject) => {
@@ -291,9 +259,4 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 		});
 		req.on("error", reject);
 	});
-}
-
-function reqCloseCleanup(_res: ServerResponse, fn: () => void): void {
-	// ServerResponse emits 'close' when the underlying connection goes away.
-	_res.on("close", fn);
 }

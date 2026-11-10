@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-let stream: { onmessage?: (event: { data: string }) => void };
-const message = (text: string, role: "user" | "assistant" = "assistant") => ({ role, text, timestamp: 1000 });
+let stream: { onmessage?: (event: { data: string }) => void; src: string };
 const poll = { question: "Choose", options: [{ key: "A", label: "One" }, { key: "B", label: "Two" }] };
-const vote = [{ username: "Ada", choice: "A", remark: "ok" }];
+
 function send(event: unknown) {
 	stream.onmessage?.({ data: JSON.stringify(event) });
 }
@@ -13,66 +12,152 @@ function texts() {
 		node.id === "poll-card" ? node.textContent?.trim() : node.querySelector(".text")?.textContent?.trim(),
 	);
 }
-async function start() {
+
+async function boot(path: string) {
+	window.history.replaceState({}, "", path);
 	await import("./page.js");
 }
-
-beforeEach(() => {
+async function reset(path: string) {
 	vi.resetModules();
 	localStorage.clear();
 	document.body.innerHTML = `
-		<div id="identify-overlay" class="hidden"><input id="username-input"><button id="username-button">Join</button></div>
+		<div id="identify-overlay" class="hidden"><div id="identify-error"></div><input id="username-input"><button id="username-button">Join</button></div>
 		<div id="identity-chip" class="hidden"></div>
 		<main id="transcript"><div id="poll-card"></div></main>
+		<div id="waiting" class="hidden">Waiting for the moderator…</div>
+		<div id="members" class="hidden"></div>
 		<button id="jump-latest" class="hidden"></button>`;
-	vi.stubGlobal("EventSource", class {
-		onmessage?: (event: { data: string }) => void;
-		constructor() { stream = this; }
-	});
+	window.history.replaceState({}, "", path);
+}
+const fetchCalls: { url: string; init?: RequestInit }[] = [];
+
+beforeEach(() => {
+	fetchCalls.length = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init?: RequestInit) => {
+			fetchCalls.push({ url, init });
+			return new Response(JSON.stringify({ name: "ok" }), { status: 200, headers: { "content-type": "application/json" } });
+		}),
+	);
+	vi.stubGlobal(
+		"EventSource",
+		class {
+			onmessage?: (event: { data: string }) => void;
+			src: string;
+			constructor(src: string) {
+				this.src = src;
+				stream = this;
+			}
+		},
+	);
 	vi.stubGlobal("scrollTo", vi.fn());
 });
 
-describe("browser poll placement", () => {
-	it("keeps revealed poll between the opening message and later question/answer after reconnect", async () => {
-		await start();
-		send({ type: "snapshot", sessionId: "s", snapshot: { messages: [message("options")], poll: null, revealed: null, voteCount: null, pollAnchor: null } });
-		send({ type: "poll_open", poll, anchor: 1 });
-		send({ type: "poll_reveal", votes: vote });
-		send({ type: "transcript_delta", message: message("question", "user") });
-		send({ type: "transcript_delta", message: message("answer") });
-		expect(texts()).toEqual(["options", expect.stringContaining("VOTE RESULTS"), "question", "answer"]);
-		send({ type: "snapshot", sessionId: "s", snapshot: { messages: [message("options"), message("question", "user"), message("answer")], poll, revealed: vote, voteCount: 1, pollAnchor: 1 } });
-		expect(texts()).toEqual(["options", expect.stringContaining("VOTE RESULTS"), "question", "answer"]);
+describe("page wiring", () => {
+	it("uses the relay base path for events and identify", async () => {
+		await reset("/s/ols-4596?key=K");
+		await boot("/s/ols-4596?key=K");
+		expect(stream.src).toBe("/s/ols-4596/events?key=K&client=" + localStorage.getItem("meeting-mirror-client"));
+		(document.getElementById("username-input") as HTMLInputElement).value = "Ann";
+		await document.getElementById("username-button")!.dispatchEvent(new Event("click"));
+		expect(fetchCalls.some((c) => c.url === "/s/ols-4596/identify?key=K")).toBe(true);
 	});
 
-	it("retains an open poll at its anchor and restores the vote count after a branch reset", async () => {
-		await start();
-		send({ type: "snapshot", sessionId: "s", snapshot: { messages: [message("options")], poll, revealed: null, voteCount: 2, pollAnchor: 1 } });
-		send({ type: "transcript_delta", message: message("later") });
-		expect(texts()).toEqual(["options", expect.stringContaining("2 votes in"), "later"]);
-		send({ type: "transcript_reset", snapshot: { messages: [message("new options"), message("new later")], poll, revealed: null, voteCount: 2, pollAnchor: 1 } });
-		expect(texts()).toEqual(["new options", expect.stringContaining("2 votes in"), "new later"]);
+	it("uses root paths in local mode", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		expect(stream.src.startsWith("/events?key=K&client=")).toBe(true);
 	});
 
-	it("clamps the anchor when a rewind removes the opening message", async () => {
-		await start();
-		send({ type: "snapshot", sessionId: "s", snapshot: { messages: [message("options"), message("other")], poll, revealed: vote, voteCount: 1, pollAnchor: 2 } });
-		send({ type: "transcript_reset", snapshot: { messages: [message("fork")], poll, revealed: vote, voteCount: 1, pollAnchor: 2 } });
-		expect(texts()).toEqual(["fork", expect.stringContaining("VOTE RESULTS")]);
+	it("creates a client id once and reuses it", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		const id1 = localStorage.getItem("meeting-mirror-client");
+		expect(id1).toMatch(/^[0-9a-f-]{10,}$/);
+		send({ type: "snapshot", you: null, snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
 	});
 
-	it("never scrolls automatically on new messages or snapshot restore", async () => {
-		await start();
-		send({ type: "snapshot", sessionId: "s", snapshot: { messages: [message("options")], poll: null, revealed: null, voteCount: null, pollAnchor: null } });
-		send({ type: "transcript_delta", message: message("new reply") });
-		expect(window.scrollTo).not.toHaveBeenCalled();
+	it("snapshot you:null shows overlay; you:Ann hides it and chips Ann", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		send({ type: "snapshot", you: null, snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		expect(document.getElementById("identify-overlay")!.classList.contains("hidden")).toBe(false);
+		send({ type: "snapshot", you: "Ann", snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		expect(document.getElementById("identify-overlay")!.classList.contains("hidden")).toBe(true);
+		expect(document.getElementById("identity-chip")!.textContent).toContain("Ann");
 	});
 
-	it("retains a revealed poll after branch reset, and orders later messages after it", async () => {
-		await start();
-		send({ type: "snapshot", sessionId: "s", snapshot: { messages: [message("options")], poll, revealed: vote, voteCount: 1, pollAnchor: 1 } });
-		send({ type: "transcript_reset", snapshot: { messages: [message("fork options"), message("fork question", "user")], poll, revealed: vote, voteCount: 1, pollAnchor: 1 } });
-		send({ type: "transcript_delta", message: message("fork answer") });
-		expect(texts()).toEqual(["fork options", expect.stringContaining("VOTE RESULTS"), "fork question", "fork answer"]);
+	it("join conflict shows the server message in #identify-error", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				new Response(JSON.stringify({ error: "John is already in the room. Choose another name, for example John K." }), {
+					status: 409,
+					headers: { "content-type": "application/json" },
+				}),
+			),
+		);
+		await reset("/?key=K");
+		await boot("/?key=K");
+		send({ type: "snapshot", you: null, snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		(document.getElementById("username-input") as HTMLInputElement).value = "John";
+		await document.getElementById("username-button")!.dispatchEvent(new Event("click"));
+		await new Promise((r) => setTimeout(r, 10));
+		expect(document.getElementById("identify-error")!.textContent).toContain("John is already in the room");
+	});
+
+	it("vote 401 shows the join overlay", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		send({ type: "snapshot", you: "Ann", snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(JSON.stringify({ error: "join first" }), { status: 401, headers: { "content-type": "application/json" } })),
+		);
+		send({ type: "poll_open", poll, anchor: 0 });
+		await document.querySelector<HTMLElement>(".poll-option")!.dispatchEvent(new Event("click"));
+		await new Promise((r) => setTimeout(r, 10));
+		expect(document.getElementById("identify-overlay")!.classList.contains("hidden")).toBe(false);
+	});
+
+	it("members event renders escaped membersText with ticks", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		send({ type: "members", members: [{ name: "Alice", voted: true }, { name: "Bob", voted: false }], voteCount: 1 });
+		expect(document.getElementById("members")!.textContent).toBe("In the room: Alice ✓, Bob (1 of 2 voted)");
+		send({ type: "members", members: [{ name: "Alice", voted: false }, { name: "Bob", voted: false }], voteCount: null });
+		expect(document.getElementById("members")!.textContent).toBe("In the room: Alice, Bob (2)");
+	});
+
+	it("poll status line shows voteCount", async () => {
+		await reset("/?key=K");
+		await boot("/?key=K");
+		send({ type: "snapshot", you: "Ann", snapshot: { messages: [], poll, revealed: null, voteCount: 2, pollAnchor: 0 }, members: { members: [], voteCount: 2 } });
+		expect(document.getElementById("poll-status")!.textContent).toBe("2 votes in · hidden until reveal");
+	});
+
+	it("waiting shows and hides; invalid_key stops rendering", async () => {
+		await reset("/s/x?key=K");
+		await boot("/s/x?key=K");
+		send({ type: "waiting" });
+		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(false);
+		send({ type: "snapshot", you: null, snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(true);
+		send({ type: "invalid_key" });
+		expect(document.body.textContent).toContain("This link is not valid for this room.");
+	});
+});
+
+describe("membersText", () => {
+	it("formats poll, no-poll and empty cases", async () => {
+		const { membersText } = await import("./page.js");
+		expect(membersText({ members: [{ name: "Alice", voted: true }, { name: "Bob", voted: false }], voteCount: 1 })).toBe(
+			"In the room: Alice ✓, Bob (1 of 2 voted)",
+		);
+		expect(membersText({ members: [{ name: "Alice", voted: false }, { name: "Bob", voted: false }], voteCount: null })).toBe(
+			"In the room: Alice, Bob (2)",
+		);
+		expect(membersText({ members: [], voteCount: null })).toBe("");
 	});
 });

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { uuidv7 } from "@earendil-works/pi-ai";
 import { networkInterfaces } from "node:os";
 import { MirrorState, type Poll } from "./state.js";
+import { Hub } from "./hub.js";
 import { LocalServer } from "./transport.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
@@ -34,6 +35,7 @@ export function formatPollResult(
 
 export default function meetingMirror(pi: ExtensionAPI): void {
 	let state: MirrorState | null = null;
+	let hub: Hub | null = null;
 	let server: LocalServer | null = null;
 
 	const ensureState = (): MirrorState => {
@@ -86,6 +88,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		state = new MirrorState();
+		hub = new Hub(state);
 		seenEntries.clear();
 		resync(ctx);
 		// Sharing is opt-in: the session stays private until /mirror share.
@@ -108,8 +111,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 			ctx.ui.notify("Meeting Mirror is already shared.", "info");
 			return;
 		}
-		const s = ensureState();
-		server = new LocalServer(s, { port: configuredPort, host: configuredHost });
+		ensureState();
+		server = new LocalServer(hub!, { port: configuredPort, host: configuredHost });
 		try {
 			await server.start();
 			const port = server.url.split(":").pop();

@@ -146,14 +146,40 @@ export function formatMessage(m) {
 	</div>`;
 }
 
+/** Member list text: "In the room: Alice ✓, Bob (1 of 2 voted)". */
+export function membersText(list) {
+	if (!list || list.members.length === 0) return "";
+	const names = list.members.map((m) => `${m.name}${m.voted ? " ✓" : ""}`).join(", ");
+	if (list.voteCount !== null && list.voteCount !== undefined) {
+		return `In the room: ${names} (${list.voteCount} of ${list.members.length} voted)`;
+	}
+	return `In the room: ${names} (${list.members.length})`;
+}
+
 // ---------------------------------------------------------------------------
 // Browser wiring below — never executed in Node tests.
 // ---------------------------------------------------------------------------
 
 let username = null;
-let voteToken = null;
 let pollActive = false;
-let currentSessionId = null;
+let deadLink = false;
+
+// Base path and key from the URL: "/s/ols-4596" on the relay, "" locally.
+// Guarded so the module stays importable in Node for tests of pure helpers.
+const hasWindow = typeof location !== "undefined";
+const PATH = hasWindow ? location.pathname.replace(/\/$/, "") : "";
+const KEY = hasWindow ? new URLSearchParams(location.search).get("key") ?? "" : "";
+const BASE = PATH === "" ? "" : PATH;
+const CLIENT_ID = (() => {
+	if (!hasWindow) return "";
+	let id = localStorage.getItem("meeting-mirror-client");
+	if (!id) {
+		id = crypto.randomUUID();
+		localStorage.setItem("meeting-mirror-client", id);
+	}
+	return id;
+})();
+const api = (path) => `${BASE}${path}?key=${encodeURIComponent(KEY)}`;
 
 function appendMessage(m) {
 	const transcript = document.getElementById("transcript");
@@ -196,10 +222,10 @@ async function castVote(choice) {
 	const remarkEl = document.getElementById("poll-remark");
 	const status = document.getElementById("poll-status");
 	try {
-		const res = await fetch("/vote", {
+		const res = await fetch(api("/vote"), {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ token: voteToken, username, choice, remark: remarkEl ? remarkEl.value : "" }),
+			body: JSON.stringify({ clientId: CLIENT_ID, choice, remark: remarkEl ? remarkEl.value : "" }),
 		});
 		if (res.ok) {
 			if (pollActive) {
@@ -209,18 +235,13 @@ async function castVote(choice) {
 			}
 			return;
 		}
-		const body = await res.json().catch(() => ({}));
-		if (res.status === 401 || res.status === 403) {
-			// Stale identity (e.g. server restarted): re-identify.
-			localStorage.removeItem("meeting-mirror-username");
-			localStorage.removeItem("meeting-mirror-token");
-			username = null;
-			voteToken = null;
-			updateIdentityChip();
-			if (status) status.textContent = "Please identify again to vote.";
+		if (res.status === 401) {
+			// Not joined in this session: ask for a name.
+			if (status) status.textContent = "Please identify to vote.";
 			showIdentifyOverlay();
 			return;
 		}
+		const body = await res.json().catch(() => ({}));
 		if (status) status.textContent = `Vote rejected: ${body.error || res.status}`;
 	} catch (err) {
 		if (status) status.textContent = "Vote failed: network error";
@@ -261,11 +282,28 @@ function clearPollCard() {
 }
 
 function handleEvent(event) {
+	if (deadLink) return;
+	if (event.type === "invalid_key") {
+		deadLink = true;
+		document.body.innerHTML = "<main style=\"max-width:680px;margin:80px auto;font-family:Georgia,serif\"><p>This link is not valid for this room.</p></main>";
+		return;
+	}
+	if (event.type === "waiting") {
+		document.getElementById("waiting")?.classList.remove("hidden");
+		return;
+	}
 	if (event.type === "snapshot") {
+		document.getElementById("waiting")?.classList.add("hidden");
 		// A snapshot is the full state (first connect or reconnect after a
 		// server restart): rebuild the page, never append on top of it.
-		syncIdentityToSession(event.sessionId);
+		syncIdentity(event.you);
 		restoreSnapshot(event.snapshot);
+		const membersEl = document.getElementById("members");
+		if (membersEl) {
+			const text = membersText(event.members);
+			membersEl.textContent = text;
+			membersEl.classList.toggle("hidden", text === "");
+		}
 	} else if (event.type === "transcript_reset") {
 		// The session was rewound or forked: rebuild messages and restore the poll.
 		restoreSnapshot(event.snapshot);
@@ -280,9 +318,13 @@ function handleEvent(event) {
 	} else if (event.type === "poll_close") {
 		clearPollCard();
 		currentPoll = null;
-	} else if (event.type === "vote_cast") {
-		const status = document.getElementById("poll-status");
-		if (status) status.textContent = `${event.count} votes in · hidden until reveal`;
+	} else if (event.type === "members") {
+		const el = document.getElementById("members");
+		if (el) {
+			const text = membersText(event);
+			el.textContent = text;
+			el.classList.toggle("hidden", text === "");
+		}
 	}
 }
 
@@ -308,7 +350,7 @@ function rebuildTranscript(messages) {
 }
 
 function connectEvents() {
-	const es = new EventSource("/events");
+	const es = new EventSource(`${api("/events")}&client=${encodeURIComponent(CLIENT_ID)}`);
 	es.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
 }
 
@@ -327,54 +369,43 @@ function keyboardShortcuts() {
 	});
 }
 
-function syncIdentityToSession(sessionId) {
-	currentSessionId = sessionId;
-	const storedSession = localStorage.getItem("meeting-mirror-session");
-	const storedName = localStorage.getItem("meeting-mirror-username");
-	const storedToken = localStorage.getItem("meeting-mirror-token");
-	if (storedSession === sessionId && storedName && storedToken) {
-		// Same server instance: the stored identity is still valid.
-		username = storedName;
-		voteToken = storedToken;
-		updateIdentityChip();
-		return;
-	}
-	// New server instance (restarted pi session): the user has not joined
-	// this session. Show the login page, name prefilled for convenience.
-	username = null;
-	voteToken = null;
+function syncIdentity(you) {
+	username = you;
 	updateIdentityChip();
-	showIdentifyOverlay(storedName);
+	if (you) {
+		document.getElementById("identify-overlay").classList.add("hidden");
+	} else {
+		showIdentifyOverlay(localStorage.getItem("meeting-mirror-username"));
+	}
 }
 
 function initIdentify() {
 	const overlay = document.getElementById("identify-overlay");
 	const input = document.getElementById("username-input");
 	const button = document.getElementById("username-button");
+	const error = document.getElementById("identify-error");
 	const join = async () => {
 		const name = input.value.trim();
-		if (!name || !currentSessionId) return;
+		if (!name) return;
+		if (error) error.textContent = "";
 		try {
-			const res = await fetch("/identify", {
+			const res = await fetch(api("/identify"), {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ username: name }),
+				body: JSON.stringify({ clientId: CLIENT_ID, username: name }),
 			});
 			if (res.ok) {
-				const { token } = await res.json();
-				localStorage.setItem("meeting-mirror-username", name);
-				localStorage.setItem("meeting-mirror-token", token);
-				localStorage.setItem("meeting-mirror-session", currentSessionId);
-				username = name;
-				voteToken = token;
+				const { name: accepted } = await res.json();
+				localStorage.setItem("meeting-mirror-username", accepted);
+				username = accepted;
 				overlay.classList.add("hidden");
 				updateIdentityChip();
 			} else {
 				const body = await res.json().catch(() => ({}));
-				alert(body.error ? `Could not join: ${body.error}` : "Could not join.");
+				if (error) error.textContent = body.error ?? `Could not join (${res.status}).`;
 			}
 		} catch {
-			alert("Could not join: server unreachable.");
+			if (error) error.textContent = "Could not join: server unreachable.";
 		}
 	};
 	button.addEventListener("click", join);
@@ -398,9 +429,7 @@ function initJumpLatest() {
 if (typeof document !== "undefined") {
 	document.getElementById("identity-chip").addEventListener("click", () => {
 		localStorage.removeItem("meeting-mirror-username");
-		localStorage.removeItem("meeting-mirror-token");
 		username = null;
-		voteToken = null;
 		updateIdentityChip();
 		showIdentifyOverlay();
 	});

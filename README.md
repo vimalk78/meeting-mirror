@@ -1,9 +1,9 @@
 # Meeting Mirror
 
 A [pi](https://github.com/earendil-works/pi-coding-agent) extension that
-mirrors a live brainstorming session to a web page, so a team following
-along over a shared screen can read at their own pace and vote on
-options, planning-poker style.
+mirrors a live brainstorming session to a web page. A team that follows
+along over a shared screen can read at its own pace and vote on options,
+planning-poker style.
 
 ## What it does
 
@@ -11,93 +11,132 @@ options, planning-poker style.
   replies), rendered as Markdown. Tool calls and system messages are
   filtered out. Messages appear whole when complete.
 - **Voting** — run `/poll` in pi. The extension extracts the question and
-  options from the model's last message (a small side-channel LLM call),
-  shows them in the terminal for confirmation, then opens a poll on every
-  connected page. Teammates pick an option (click, or keys `1/2/3`,
-  `A/B/C`) and may add a remark. Votes stay hidden.
+  options from the model's last message (a small side-channel LLM call).
+  It shows them in the terminal for confirmation, then opens a poll on
+  every connected page. Teammates pick an option (click, or keys `1/2/3`,
+  `A/B/C`) and can add a remark. Votes stay hidden.
 - **Reveal** — `/reveal` shows everyone the tally: proportional bars with
   voter names, plus attributed remarks. Like planning poker, nobody anchors
   on early votes. `/poll-close` clears the poll.
 - **Display-only** — nothing from the page flows back into the pi session.
   The moderator relays vote outcomes to the model.
 
+The page is served by a relay on a shared host. The moderator's pi
+connects out to the relay, so teammates do not need network access to
+the moderator's laptop.
+
 ## Install
 
-```bash
-bash install.sh
-```
+1. Install the extension and its runtime dependency:
 
-This symlinks the extension into `~/.pi/agent/extensions/meeting-mirror/`.
-Start (or restart) pi; a new session prints a note that it is private until
-you run `/mirror share`.
+   ```bash
+   npm install
+   bash install.sh
+   ```
 
-Requires Node's `ws` package at runtime: run `npm install` once after
-cloning (and after pulling changes that touch `package.json`). The same
-`npm install` also sets up the test suite (`npx vitest run`).
+   `install.sh` symlinks the repository into
+   `~/.pi/agent/extensions/meeting-mirror/`. Run `npm install` again after
+   you pull changes to `package.json`.
+
+2. Set the relay address before you start pi, for example in `~/.bashrc`.
+   `install.sh` offers to add this line for you.
+
+   ```bash
+   export MEETING_MIRROR_RELAY=https://<relay-host>
+   ```
+
+   If `MEETING_MIRROR_RELAY` is not set, `/mirror share` serves the page
+   from your laptop only. That mode is for testing (see
+   [Testing without a relay](#testing-without-a-relay)).
+
+3. Start (or restart) pi. A new session is private until you run
+   `/mirror share`.
 
 ## Commands
 
-Sessions are **private by default** — nothing is served until you share:
+| Command | What it does |
+|---|---|
+| `/mirror share` | Share the room stored in this session. If there is none, create a room with a random name. |
+| `/mirror share ols-4596` | Share the room `ols-4596`. If this session has no stored key for that name, a confirmation prompt (default No) asks before it starts a new room. |
+| `/mirror share <full link>` | Share with the name and key from the link, and store them in this session. Use this for a handoff. |
+| `/mirror unshare` | Disconnect from the relay. The room is freed at once. |
+| `/mirror` | Show the sharing status, the link, the poll state, and who is in the room. |
+| `/poll` | Extract a poll from the last assistant message (LLM call + terminal confirmation). |
+| `/poll 2` | Same, from the 2nd-last assistant message. |
+| `/poll Q \| opt \| opt` | Open a manual poll (pipe syntax). |
+| `/reveal` | Reveal the votes on the page. |
+| `/poll-close` | Close the current poll. |
 
-| Command | Local mode | Relay mode |
-|---|---|---|
-| `/mirror share` | Start a server on the laptop with a new random key, and print its links. (If this session has a stored room, relay mode is used instead.) | Reuse the room stored in this session. If none, create a room with a random name. |
-| `/mirror share ols-4596` | Not supported: shows "Room names need relay mode (set MEETING_MIRROR_RELAY)." | Reuse the stored key for `ols-4596` if this session has one. If not, a confirmation prompt (default No) guards against accidentally starting a new room. |
-| `/mirror share <full link>` | Not applicable: a link names its relay, so this always uses relay mode. | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
-| `/mirror unshare` | Stop the server. Open pages disconnect. | Disconnect from the relay. The room is freed at once. |
-| `/mirror` | Show sharing status, the link, poll state and who is in the room. | Same. |
-| `/poll` | Extract a poll from the last assistant message (LLM call + terminal confirm) | Same. |
-| `/poll 2` | Same, from the 2nd-last assistant message |
-| `/poll Q \| opt \| opt` | Manual poll (pipe syntax) |
-| `/reveal` | Reveal votes on the page |
-| `/poll-close` | Close the current poll |
+## Rooms
 
-## Team access
+A room is a **name + key**.
 
-The page is served from the presenter's machine on port 7433 (next free
-port if taken). Teammates need network access to that machine — e.g. the
-same office LAN or VPN. For remote teams, use relay mode (below) instead.
-Local mode is kept for solo testing.
+- **Name:** the address of the room. It is not secret. You can pick one,
+  for example a Jira id such as `ols-4596`. Allowed: lowercase letters,
+  digits, and dashes, 3–30 characters.
+- **Key:** a random UUID. It is the only credential. Without it, nobody
+  can read, vote, or present.
+- **Link:** `https://<relay-host>/s/<name>?key=<key>`
 
-**Known limitation — polls are in-memory only.** Poll state (question,
-options, votes) lives in the extension's memory: it does not survive
-`/reload`, a pi restart, or `/mirror unshare`-plus-restart. The
-transcript does survive (it is reseeded from the session file), so after
-a reload you will see the conversation but not an open poll. Close or
-finish polls before reloading. Persisting polls is a known future item
-(see the roadmap).
+The extension stores the room in the pi session. If you resume the
+session, or give the session file to another moderator, the team keeps
+the same link. A full link or a stored room includes the relay address,
+so `MEETING_MIRROR_RELAY` is necessary only to start a new room.
 
-## Relay mode (remote teams)
+The relay keeps a room only while its moderator is connected. If the
+moderator disconnects, open pages show "Waiting for the moderator…".
+They continue automatically when the moderator shares the room again.
+Pages also reconnect by themselves after a relay restart.
 
-Set `MEETING_MIRROR_RELAY=https://<relay-host>` before starting pi (for
-example in `~/.bashrc`). It is needed only to start a brand-new room; a
-full room link or a room stored in the session carries the relay address.
+**Handoff (Alice → Bob):**
 
-Rooms are name + key. The link `https://<relay>/s/<name>?key=<key>` is
-stable across meetings and moderators as long as the room name and key
-stay the same. The room is stored in the pi session, so resuming the
-session or handing the session file to another moderator keeps the same
-link.
+1. Alice gives Bob her session file. This is the `.jsonl` file from
+   `~/.pi/agent/sessions/`, or her `/export` HTML file. From the HTML
+   file, Bob clicks "↓ JSONL" at the top right to get the `.jsonl` file.
+2. Bob runs `pi --session <file>.jsonl`.
+3. Bob runs `/mirror share`.
 
-**Handoff (Alice → Bob):** Alice gives Bob her session file — the
-`.jsonl` from `~/.pi/agent/sessions/`, or the `/export` HTML (Bob clicks
-"↓ JSONL" at the top right to get the file). Bob runs
-`pi --session <file>.jsonl`, then `/mirror share`. The team's link works
-unchanged and the page shows the conversation where Alice stopped.
-Polls do not carry over.
+The team's link does not change. The page shows the conversation where
+Alice stopped. Polls do not carry over.
 
-**Recovery from a wrong share:** `/mirror unshare` (or quitting pi) frees
-the room at once. Open the right session with `pi --session <file>.jsonl`
-and `/mirror share` again. If the session file is unavailable,
-`/mirror share <original link>` restores the room and link, but shows the
-current session's conversation.
+**Recovery from a wrong share:**
 
-Note: a page opened with a key that does not match the room shows
-"This link is not valid for this room." and stops updating. After the
-right moderator shares the room, such a page must be reloaded with the
-correct link.
+1. Run `/mirror unshare`, or quit pi. The room is freed at once.
+2. Open the correct session with `pi --session <file>.jsonl`.
+3. Run `/mirror share` again.
 
-**Deploying the relay** (OpenShift):
+If the session file is not available, run `/mirror share <original link>`.
+This restores the room and the link, but the page shows the current
+session's conversation.
+
+A page opened with a key that does not match the room shows "This link
+is not valid for this room." and stops updating. Reload that page with
+the correct link.
+
+## Security
+
+- The room key is the only credential. Anyone with the link can read the
+  transcript and vote.
+- The key does not change between meetings. It stays the same as long as
+  the session keeps the room.
+- The key is stored as plain text in the pi session file. pi's `/export`
+  HTML file contains it too. **A session file or an export gives the same
+  access as the room link.** Share them only with the team.
+- If the relay route is reachable from the internet, the key is the only
+  protection. Send room links to the meeting, not to a broad channel.
+
+## Known limitation: polls are in memory only
+
+Poll state (question, options, votes) lives in the memory of the
+extension. It does not survive `/reload` or a pi restart. The transcript
+does survive, because the extension reads it again from the session file.
+After a reload you see the conversation, but not an open poll. Close or
+finish polls before you reload. Saving polls is a future item (see the
+roadmap).
+
+## Deploying the relay
+
+On OpenShift:
 
 ```bash
 oc new-project meeting-mirror
@@ -107,35 +146,58 @@ oc rollout status deploy/relay
 oc get route relay   # the relay host for MEETING_MIRROR_RELAY
 ```
 
-The relay holds no state and must run as exactly **one replica**
-(`Recreate` strategy is set for rolling by image tag). If its route is
-internet-reachable, the room key is the only protection — treat room
-links as internal.
+The relay keeps no state. It must run as exactly **one replica**. The
+deployment uses the `Recreate` strategy, so a new image replaces the pod
+instead of running two pods at the same time.
 
-**Security note:** the share URL contains a per-session key — it is the
-only credential. Anyone who can reach the port *and* has the URL can read
-the transcript and vote; anyone without the key gets nothing (all
-endpoints reject it). The key is random per session, so a URL from a
-previous meeting never works on the next one. Still, treat the share link
-like any internal document: send it to the meeting, not to a broad
-channel. Set `MEETING_MIRROR_HOST` (e.g. `127.0.0.1` or a NetBird IP) to
-bind a specific interface instead of all of them.
+With podman, build from the repository root:
+
+```bash
+podman build -f relay/Containerfile -t meeting-mirror-relay .
+podman run -p 8080:8080 meeting-mirror-relay
+```
+
+Put TLS in front of the relay. Browsers and the moderator must connect
+over HTTPS and WSS.
 
 ## Development
 
 ```bash
 npm install
-npx vitest run   # 154 tests
-npx tsc --noEmit # type check (pure modules; index.ts is checked by pi itself)
+npx vitest run             # 154 tests
+npx tsc -p .               # type check the extension
+npx tsc -p relay --noEmit  # type check the relay
 ```
 
 Layout:
 
 | File | Responsibility |
 |---|---|
-| `index.ts` | Extension entry: commands, session wiring |
-| `index-helpers.ts` | Pure helpers (message filtering, Nth-last lookup) |
-| `state.ts` | In-memory transcript + poll state, event vocabulary |
-| `transport.ts` | Transport interface + `LocalServer` (SSE, votes) |
-| `extract.ts` | `/poll` argument parsing + LLM poll extraction |
-| `page.html/css/js` | The team-facing page |
+| `src/index.ts` | Extension entry: commands, session wiring |
+| `src/index-share.ts` | `/mirror share` decision (relay or local, new or stored room) |
+| `src/index-helpers.ts` | Pure helpers (message filtering, Nth-last lookup) |
+| `src/state.ts` | In-memory transcript and poll state, event vocabulary |
+| `src/hub.ts` | Room logic: names, presence, votes, member list |
+| `src/rooms.ts` | Room names, links, stored-room lookup |
+| `src/relay-client.ts` | Connection from the moderator's pi to the relay |
+| `src/transport.ts` | Transport interface and `LocalServer` (testing without a relay) |
+| `src/extract.ts` | `/poll` argument parsing and LLM poll extraction |
+| `page/` | The team-facing page (`page.html`, `page.css`, `page.js`) |
+| `relay/src/` | The relay server |
+| `deploy/relay.yaml` | OpenShift resources for the relay |
+
+### Testing without a relay
+
+If `MEETING_MIRROR_RELAY` is not set and the session has no stored room,
+`/mirror share` starts a server on your laptop. Use this mode for solo
+tests only.
+
+- The server listens on port 7433. If that port is in use, it tries the
+  next free port.
+- Each share makes a new random key, so the link changes every time.
+- Room names are not available. `/mirror share <name>` shows
+  "Room names need relay mode (set MEETING_MIRROR_RELAY)."
+- `/mirror unshare` stops the server. Open pages disconnect.
+- To select a different port, set `MEETING_MIRROR_PORT`.
+- To listen on one interface only, set `MEETING_MIRROR_HOST` (for example
+  `127.0.0.1`). By default the server listens on all interfaces.

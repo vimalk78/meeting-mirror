@@ -67,6 +67,7 @@ export function findStoredRoom(
 	name?: string,
 ): Room | null {
 	let found: Room | null = null;
+	let foundForName: Room | null = null;
 	for (const entry of branch) {
 		if (entry.type !== "custom" || entry.customType !== STORED_ROOM_TYPE) continue;
 		const data = entry.data as { name?: unknown; key?: unknown; relay?: unknown } | undefined;
@@ -77,9 +78,11 @@ export function findStoredRoom(
 			typeof data.relay === "string" &&
 			isRoomName(data.name)
 		) {
-			found = { name: data.name, key: data.key, relay: data.relay };
+			const room: Room = { name: data.name, key: data.key, relay: data.relay };
+			found = room;
+			if (name && room.name === name) foundForName = room;
 		}
 	}
-	if (found && name && found.name !== name) return null;
+	if (name) return foundForName;
 	return found;
 }

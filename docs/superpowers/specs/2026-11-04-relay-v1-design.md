@@ -35,6 +35,9 @@ teammates open the page there.
 - `MEETING_MIRROR_RELAY=https://<relay-host>` set: relay mode, described
   here. This is how the team shares.
 
+The mode is decided per share: a full link or a room stored in this
+session means relay mode; otherwise `MEETING_MIRROR_RELAY` decides.
+
 `MEETING_MIRROR_RELAY` is an environment variable, so it must be set
 before pi starts, for example `export MEETING_MIRROR_RELAY=…` in
 `~/.bashrc`. It is needed only to start a brand-new room. A full room link
@@ -68,9 +71,9 @@ and reuses the same link.
 
 | Command | Local mode | Relay mode |
 |---|---|---|
-| `/mirror share` | Start a server on the laptop with a new random key, and print its links. | Reuse the room stored in this session. If none, create a room with a random name. |
+| `/mirror share` | Start a server on the laptop with a new random key, and print its links. (If this session has a stored room, relay mode is used instead.) | Reuse the room stored in this session. If none, create a room with a random name. |
 | `/mirror share ols-4596` | Not supported: shows "Room names need relay mode (set MEETING_MIRROR_RELAY)." | Reuse the stored key for `ols-4596` if this session has one. If not, show the confirmation prompt below, then create the room. |
-| `/mirror share <full link>` | Not supported: shows the same message. | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
+| `/mirror share <full link>` | Not applicable: a link names its relay, so this always uses relay mode. | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
 | `/mirror unshare` | Stop the server. Open pages disconnect. | Disconnect from the relay. The room is freed at once. |
 | `/mirror` | Show sharing status, the link, and poll status. | Same. |
 

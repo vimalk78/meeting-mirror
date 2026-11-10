@@ -213,3 +213,18 @@ describe("member line stays visible (user report: scrolls away)", () => {
 		}
 	});
 });
+
+describe("all-voted notice (moderator guidance)", () => {
+	it("fires only when every present member has voted on an open poll", async () => {
+		const { allVotedNotice } = await import("./page.js");
+		const snap = (over: Record<string, unknown> = {}) => ({ messages: [], poll, revealed: null, voteCount: 0, pollAnchor: 0, ...over });
+		const two = { members: [{ name: "A", voted: true }, { name: "B", voted: true }], voteCount: 2 };
+		expect(allVotedNotice(snap({ voteCount: 2 }), two)).toBe(
+			"All 2 attendees have voted. Run /reveal to show the results, then /poll-close to close the poll.",
+		);
+		expect(allVotedNotice(snap({ voteCount: 1 }), two)).toBe(null);
+		expect(allVotedNotice(snap({ voteCount: 2, revealed: [{ username: "A", choice: "A", remark: "" }] }), two)).toBe(null);
+		expect(allVotedNotice(snap({ voteCount: 2, poll: null }), two)).toBe(null);
+		expect(allVotedNotice(snap({ voteCount: 2 }), { members: [], voteCount: 2 })).toBe(null);
+	});
+});

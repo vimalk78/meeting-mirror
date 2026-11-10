@@ -147,6 +147,15 @@ export function formatMessage(m) {
 }
 
 /** Member list text: "In the room: Alice ✓, Bob (1 of 2 voted)". */
+/** Moderator-side guidance: tells the moderator when everyone present has
+ * voted on the open poll, so they know it can be revealed and closed. */
+export function allVotedNotice(snapshot, list) {
+	if (!snapshot.poll || snapshot.revealed) return null;
+	if (!list || list.members.length === 0) return null;
+	if ((snapshot.voteCount ?? 0) < list.members.length) return null;
+	return `All ${list.members.length} attendees have voted. Run /reveal to show the results, then /poll-close to close the poll.`;
+}
+
 export function membersText(list) {
 	if (!list || list.members.length === 0) return "";
 	const names = list.members.map((m) => `${m.name}${m.voted ? " ✓" : ""}`).join(", ");

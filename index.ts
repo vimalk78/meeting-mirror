@@ -9,7 +9,7 @@ import { STORED_ROOM_TYPE, findStoredRoom, type Room } from "./rooms.js";
 import { decideShare } from "./index-share.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
-import { membersText } from "./page.js";
+import { membersText, allVotedNotice } from "./page.js";
 
 /** Human-readable poll result, used for the terminal notify and the
  * injected session message. */
@@ -59,6 +59,10 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	let state: MirrorState | null = null;
 	let hub: Hub | null = null;
 	let server: Transport | null = null;
+	/** Notifies from places without a command ctx (hub event subscription). */
+	let uiNotify: ((msg: string, level: "info" | "warning") => void) | null = null;
+	/** One all-voted notice per open poll. */
+	let allVotedNotified = false;
 
 	const ensureState = (): MirrorState => {
 		if (!state) throw new Error("Meeting Mirror is not active in this session.");
@@ -113,6 +117,21 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		state = new MirrorState();
 		hub = new Hub(state);
+		uiNotify = (msg, level) => ctx.ui.notify(msg, level);
+		allVotedNotified = false;
+		// Guide the moderator: when every present member has voted, say so once.
+		hub.subscribe((event) => {
+			if (event.type === "poll_open" || event.type === "poll_reveal" || event.type === "poll_close") {
+				allVotedNotified = false;
+				return;
+			}
+			if (event.type !== "members" || allVotedNotified || !state || !hub) return;
+			const notice = allVotedNotice(state.getSnapshot(), hub.memberList());
+			if (notice) {
+				allVotedNotified = true;
+				uiNotify?.(notice, "info");
+			}
+		});
 		seenEntries.clear();
 		resync(ctx);
 		// Sharing is opt-in: the session stays private until /mirror share.
@@ -252,6 +271,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 					// Display only — terminal and page. Nothing enters the model's
 					// context; the moderator relays or overrides as they choose.
 					ctx.ui.notify(formatPollResult(ensureState().getSnapshot().poll, revealEvent.votes), "info");
+					ctx.ui.notify("Run /poll-close when the team has seen the results.", "info");
 				}
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : "No poll is open.", "warning");
@@ -343,7 +363,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 
 			try {
 				s.openPoll(finalPoll);
-				ctx.ui.notify("Poll opened on the Meeting Mirror page.", "info");
+				ctx.ui.notify("Poll opened on the Meeting Mirror page. /reveal shows the results, /poll-close closes the poll.", "info");
 			} catch (err) {
 				ctx.ui.notify(err instanceof Error ? err.message : "Could not open poll.", "warning");
 			}

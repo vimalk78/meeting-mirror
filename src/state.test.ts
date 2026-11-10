@@ -185,3 +185,11 @@ describe("reveal error messages (user report: misleading)", () => {
 		expect(() => s.reveal()).toThrow(/already been revealed/i);
 	});
 });
+
+describe("openPoll guard message (user report: wrong command name)", () => {
+	it("points at /poll-close, not the nonexistent /poll close", () => {
+		const s = new MirrorState();
+		s.openPoll({ question: "Q?", options: [{ key: "A", label: "a" }] });
+		expect(() => s.openPoll({ question: "Q2?", options: [{ key: "B", label: "b" }] })).toThrow(/\/poll-close/);
+	});
+});

@@ -54,7 +54,7 @@ export class MirrorState {
 
 	openPoll(poll: Poll): MirrorEvent[] {
 		if (this.poll) {
-			throw new Error("A poll is already open. Close it with /poll close first.");
+			throw new Error("A poll is already open. Close it with /poll-close first.");
 		}
 		this.poll = poll;
 		this.pollAnchor = this.messages.length;

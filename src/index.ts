@@ -11,6 +11,12 @@ import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
 import { membersText, allVotedNotice } from "../page/page.js";
 
+/** Notice when /poll is run while another poll is open or revealed. */
+export function existingPollNotice(poll: Poll, revealed: boolean): string {
+	const state = revealed ? "already revealed" : "open";
+	return `A poll is ${state} ("${poll.question.slice(0, 60)}${poll.question.length > 60 ? "…" : ""}"). Run /reveal to show its results and /poll-close before opening a new one.`;
+}
+
 /** Single notify for /reveal: the result plus the close hint in one
  * message, because a second toast would replace the first. */
 export function revealNotice(
@@ -291,6 +297,12 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		description: "Open a poll: /poll [N] extracts from the Nth-last message, /poll q | opt | opt is manual",
 		handler: async (args, ctx) => {
 			const s = ensureState();
+			const snapshot = s.getSnapshot();
+			if (snapshot.poll) {
+				// bail out before extraction and the confirm dialog: opening is doomed
+				ctx.ui.notify(existingPollNotice(snapshot.poll, snapshot.revealed !== null), "warning");
+				return;
+			}
 			let parsed;
 			try {
 				parsed = parsePollArgs(args);

@@ -317,3 +317,15 @@ describe("reveal notice (user report: result hidden by second toast)", () => {
 		expect(msg).toContain("/poll-close");
 	});
 });
+
+describe("existing poll notice (user report: prompt shown for a doomed poll)", () => {
+	it("names the open poll and the commands to finish it", async () => {
+		const { existingPollNotice } = await import("./index.js");
+		const msg = existingPollNotice({ question: "Ship?", options: [{ key: "A", label: "yes" }] }, false);
+		expect(msg).toContain("Ship?");
+		expect(msg).toContain("/reveal");
+		expect(msg).toContain("/poll-close");
+		const revealed = existingPollNotice({ question: "Ship?", options: [{ key: "A", label: "yes" }] }, true);
+		expect(revealed).toContain("already revealed");
+	});
+});

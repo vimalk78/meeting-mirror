@@ -334,7 +334,7 @@ describe("LocalServer", () => {
 		const res = await fetch(`${base}/?key=${key}`);
 		expect(res.status).toBe(200);
 		const setCookie = res.headers.get("set-cookie") ?? "";
-		expect(setCookie).toContain("mm_key=");
+		expect(setCookie).toMatch(/^mm_key_[0-9a-f-]+=.*Path=\/.*HttpOnly.*SameSite=Strict/);
 		const cookie = setCookie.split(";")[0]!;
 		const css = await fetch(`${base}/page.css`, { headers: { cookie } });
 		expect(css.status).toBe(200);

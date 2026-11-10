@@ -154,7 +154,7 @@ describe("Hub events", () => {
 		const events: HubEvent[] = [];
 		h.subscribe((e) => events.push(e));
 		h.identify({ clientId: "c1", username: "Alice" });
-		h.open("c1");
+		const conn = h.open("c1").connId;
 		const types = () => events.map((e) => e.type);
 		expect(types()).toContain("members");
 		events.length = 0;
@@ -170,7 +170,7 @@ describe("Hub events", () => {
 		s.closePoll();
 		expect(types()).toContain("members");
 		events.length = 0;
-		h.close(h.open("c1").connId);
+		h.close(conn);
 		// Alice has no connection now: presence change emits members
 		expect(types()).toContain("members");
 	});

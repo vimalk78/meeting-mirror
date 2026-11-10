@@ -16,7 +16,7 @@ both starting from the same code.
 2. Identify where a relay could live: an OpenShift cluster with
    deploy rights (permanent) or a Beaker loan (validation only).
 
-## Phase 1 — Session key (build first, serves both paths)
+## Phase 1 — Session key (done)
 
 - `/mirror share` generates a random 128-bit session key.
 - Every endpoint (page, /events, /vote, /identify) requires `?key=…`;
@@ -27,19 +27,23 @@ both starting from the same code.
 - Optional in this phase: `MEETING_MIRROR_HOST` to bind a specific
   interface (e.g. wt0 only).
 
-## Phase 2 — Relay brainstorm + spec
+## Phase 2 — Relay v1 spec (keep it simple)
 
-- One relay process multiplexing presenter sessions; pages at
-  `/s/<session-id>?key=…`.
-- Presenter connects outbound (WSS) — no inbound to the laptop, which
-  is also what CSB policy allows.
+v1 is deliberately minimal: one share = one room, nothing persists.
+
+- `/mirror share` (relay mode) dials out to the relay over WSS, creates
+  a room with a random short id and a random key, and prints
+  `https://<relay>/s/<room-id>?key=<key>`.
+- `/mirror unshare` (or the presenter disconnecting) ends the room.
+- Every share creates a new room and a new link. A multi-day
+  refinement or a moderator handoff means posting a new link; the
+  transcript itself carries over through pi's session file or export.
 - Relay is a dumb proxy: no transcript logic, no vote state; votes flow
   browser → relay → presenter's connection.
-- `/mirror share` under the relay = dial out + print the share URL;
-  `/mirror unshare` = drop the connection.
-- Auth: the session key; Route-level SSO/htpasswd if IT requires.
-- Spec failure modes: relay restart, laptop sleep, two tabs per
-  teammate, presenter reconnect with backoff.
+- Auth: the room key only.
+- Failure modes to spec: relay restart, laptop sleep or network drop
+  (presenter reconnects with backoff to the same room while the relay
+  still holds it), two tabs per teammate.
 - Output: spec addendum to the design doc, reviewed before coding.
 
 ## Phase 3 — Relay build (TDD)
@@ -57,6 +61,29 @@ both starting from the same code.
 
 - Solo test through the relay from two browser profiles.
 - One real team meeting; fix what it surfaces.
+
+## Later — richer room model (deferred, not in v1)
+
+Agreed in discussion, intentionally postponed for simplicity:
+
+- Stable rooms that survive across meetings: the room id and key are
+  stored in the pi session (`pi.appendEntry()`), so the same moderator
+  resuming the session reattaches to the same link.
+- Named rooms chosen by the moderator, e.g. a Jira id:
+  `/mirror share ols-4596` (create or claim), and
+  `/mirror share <full-url>` to attach to an existing room (handoff to
+  another moderator). Names: lowercase letters, digits, dashes,
+  3–30 characters. A guessable name is fine because the key is the
+  credential.
+- Single-presenter rule: the relay rejects a second presenter attaching
+  to a room that already has one ("room busy"), never silently takes
+  over.
+- "Waiting for the moderator" page state while a room has no
+  presenter; browsers keep retrying and resume when one attaches.
+- Squatting and cleanup: rooms with no presenter and no browsers for
+  24 hours are garbage-collected, so a squatted name frees itself.
+- `/mirror rotate-key` for a suspected leaked room key.
+- Route-level SSO or htpasswd in front of the relay if IT requires it.
 
 ## Parked
 

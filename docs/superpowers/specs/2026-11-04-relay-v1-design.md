@@ -1,0 +1,190 @@
+# Meeting Mirror — Relay v1 Design
+
+Date: 2026-11-04
+Status: draft for review
+Extends: `2026-11-04-remote-access-roadmap.md` (Phase 2) and
+`2026-11-03-meeting-mirror-design.md`
+
+## Why
+
+The whole team is remote. Teammates cannot reach the moderator's laptop:
+the CSB firewall allows only SSH on VPN and NetBird interfaces, and opening
+a port needs IT approval. A relay on an internal host (an OpenShift
+cluster or a Beaker loan) solves this. The moderator's pi session makes an
+outbound connection to the relay, and teammates open the page on the relay.
+
+## Goals
+
+- Teammates use one stable link per refinement item, across meetings and
+  across moderators.
+- A moderator hands off to another teammate without the team changing
+  links.
+- A mistake (sharing the wrong session or a new room by accident) is easy
+  to notice and quick to recover from.
+- The relay stays simple: it keeps no state beyond live connections.
+
+## Non-goals
+
+- The relay does not store transcripts, polls, votes, or rooms between
+  connections.
+- No more than one moderator per room at a time.
+- No SSO, key rotation, or room cleanup in v1 (see Later).
+
+## Modes
+
+- `MEETING_MIRROR_RELAY` unset: the current `LocalServer` mode, unchanged.
+- `MEETING_MIRROR_RELAY=https://<relay-host>` set: relay mode, described
+  here.
+
+## Rooms
+
+A room is the pair **name + key**.
+
+- **Name** is the address. It tells the relay which room a browser or a
+  moderator wants. It is public and may be chosen by the moderator, for
+  example a Jira id: `ols-4596`. Allowed: lowercase letters, digits, and
+  dashes, 3–30 characters. If no name is given, the extension picks a
+  random 8-character name (Crockford base32).
+- **Key** is the credential. It is a random UUID. Without it, nobody can
+  read, vote, or present. A guessable name is acceptable because the key
+  does all the gating.
+- **Link:** `https://<relay-host>/s/<name>?key=<key>`
+
+### Stored in the pi session
+
+When a room is shared, the extension saves `{ name, key, relay }` with
+`pi.appendEntry("meeting-mirror-room", …)`. This entry is in the session
+file but is not sent to the model. On a later `/mirror share` from the
+same session, or from a copy of it, the extension finds the stored room
+and reuses the same link.
+
+## Commands (relay mode)
+
+| Command | Effect |
+|---|---|
+| `/mirror share` | Reuse the room stored in this session. If none, create a room with a random name. |
+| `/mirror share ols-4596` | Reuse the stored key for `ols-4596` if this session has one. If not, show the confirmation prompt below, then create the room. |
+| `/mirror share <full link>` | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
+| `/mirror unshare` | Disconnect from the relay. The room is freed at once. |
+| `/mirror` | Show sharing status, the link, and poll status. |
+
+### Confirmation prompt
+
+Shown when `/mirror share <name>` is used and this session has no stored
+room with that name. The default is No.
+
+```
+Room "ols-4596" has not been shared from this pi session before.
+
+If your team has used this room already, continue from that conversation instead:
+
+  • Your own earlier session: quit, then reopen it with  pi --resume
+  • A teammate's session: ask them for the session file, then open it with
+      pi --session <file>.jsonl
+    Session files are in ~/.pi/agent/sessions/<project-folder>/
+    If you have an /export HTML file: open it in a browser, click "↓ JSONL"
+    at the top right, then use  pi --session <downloaded>.jsonl
+  • You only have the room link: run  /mirror share <link>
+    (keeps the team's link, but shows this session's conversation)
+
+Start "ols-4596" as a new room? Any existing link for this room will stop working. (y/N)
+```
+
+## Relay rules
+
+1. **A room exists only while a moderator is connected.** The relay keeps
+   nothing between connections.
+2. **One moderator per room.** If a room already has a connected
+   moderator, a second share of the same name fails with "room busy". The
+   relay never takes over a room.
+3. **A room is freed as soon as its moderator disconnects.** There is no
+   grace period. Quitting pi, Ctrl+C, a crash, and `/mirror unshare` all
+   close the connection at once. A laptop that sleeps or loses network is
+   detected by a missed heartbeat, about 30 seconds at most.
+4. **No moderator connected:** browsers on the room show "Waiting for the
+   moderator" and keep retrying. When a moderator shares the room again,
+   open pages resume without reloading.
+5. **Wrong key:** requests with a key that does not match the connected
+   moderator's key are rejected.
+
+## Data flow
+
+- The moderator's extension keeps all state, as today: transcript, poll,
+  votes, and joined names.
+- When a browser connects, the relay asks the moderator for a snapshot
+  and forwards it.
+- Transcript and poll events go moderator → relay → all browsers.
+- Join and vote requests go browser → relay → moderator. The moderator's
+  reply goes back to that browser.
+- Each moderator connection has its own session id, so teammates are asked
+  for their name again when a different moderator, or a new pi session,
+  shares the room.
+- Heartbeats: the relay sends an SSE comment to browsers every 25 seconds,
+  and the moderator connection uses ping/pong. Routers and proxies close
+  idle connections otherwise.
+
+## Handoff (Alice to Bob)
+
+1. Alice gives Bob her session file, either the `.jsonl` from
+   `~/.pi/agent/sessions/`, or her `/export` HTML (Bob clicks **↓ JSONL**
+   to get the file).
+2. Bob runs `pi --session <file>.jsonl`. He has Alice's conversation and
+   her stored room.
+3. Bob runs `/mirror share`. The team's existing link works and shows the
+   conversation where Alice stopped.
+
+Polls do not carry over. That is acceptable: once revealed, a poll's
+purpose is fulfilled, and the conversation that follows records the
+outcome.
+
+## Recovery from a mistake
+
+Example: Bob runs `/mirror share ols-4596` in a fresh session and answers
+"y" to the prompt. The room now has a new key, and the team's link fails.
+Nothing is lost: Alice's file and every teammate's bookmark still have the
+original link.
+
+1. Bob runs `/mirror unshare`, or quits pi. The room is freed at once.
+2. Bob opens Alice's session with `pi --session <file>.jsonl`.
+3. Bob runs `/mirror share`. The original link works again.
+4. If Bob posted the wrong link in chat, he says to ignore it.
+
+If Alice's file is not available, `/mirror share <original link>` restores
+the room and link from any teammate's bookmark, but the page shows Bob's
+current session.
+
+## Security
+
+- The key is the only credential. The room name is not secret.
+- The key is stored in plain text in the session file, and pi's HTML
+  `/export` embeds it too. **An export or session file gives the same
+  access as the room link.** Share them only with the team. (Accepted for
+  v1.)
+- TLS terminates at the relay's route. Traffic between relay and browsers,
+  and between moderator and relay, uses HTTPS and WSS.
+- The relay keeps no data at rest.
+
+## Failure modes
+
+| Event | What happens |
+|---|---|
+| Relay restarts | Moderator extension reconnects with backoff and re-registers the stored room. Browsers reconnect and get a new snapshot. |
+| Moderator laptop sleeps | Missed heartbeat frees the room within about 30 seconds. Browsers show "Waiting for the moderator". On wake, the extension reconnects with the stored room. |
+| Moderator's network drops briefly | Room is freed, then reclaimed when the extension reconnects, usually within seconds. |
+| Second moderator shares a busy room | "room busy"; nothing changes. |
+| Teammate has two tabs open | Both work, as in local mode. |
+
+## Packaging
+
+- One container image for the relay. It can run on OpenShift
+  (Deployment, Service, Route) or with podman on a Beaker host.
+- Where to host it is still open (roadmap Phase 0).
+
+## Later (not in v1)
+
+- Look through the moderator's own saved sessions for one that already
+  used the room name, and name it in the confirmation prompt (helps a
+  moderator who started a fresh session by mistake).
+- `/mirror rotate-key` for a key that travelled too far.
+- SSO or htpasswd at the relay route, if IT requires it.
+- Poll persistence across `/reload` (still in-memory only).

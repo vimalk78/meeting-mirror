@@ -1,18 +1,23 @@
 {
-  "name": "meeting-mirror",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^1.4.0",
-    "@types/node": "^26.6.6",
-    "jsdom": "^29.1.1",
-    "typescript": "^5.6.0",
-    "vitest": "^3.0.0"
-  },
-  "workspaces": [
-    "relay"
-  ]
+	"name": "meeting-mirror",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "^1.4.0",
+		"@types/node": "^26.6.6",
+		"jsdom": "^29.1.1",
+		"typescript": "^5.6.0",
+		"vitest": "^3.0.0"
+	},
+	"workspaces": [
+		"relay"
+	],
+	"pi": {
+		"extensions": [
+			"src/index.ts"
+		]
+	}
 }

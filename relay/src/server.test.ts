@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createRelay, type RelayHandle } from "./server.js";
 
-const PAGE_DIR = new URL("../../", import.meta.url).pathname; // page.html etc. at repo root
+const PAGE_DIR = new URL("../../page/", import.meta.url).pathname;
 
 let relay: RelayHandle | null = null;
 const handles: RelayHandle[] = [];
@@ -337,7 +337,7 @@ describe("relay presenter protocol", () => {
 
 describe("adopted browser lifecycle (review fix 6)", () => {
 	it("reports close to the moderator for a browser that was parked then adopted", async () => {
-		const relay = createRelay({ pageDir: "src", pingMs: 1000 });
+		const relay = createRelay({ pageDir: "page", pingMs: 1000 });
 		await new Promise<void>((r) => relay.server.listen(0, "127.0.0.1", r));
 		const port = (relay.server.address() as any).port;
 		// browser parks before any moderator exists
@@ -366,7 +366,7 @@ describe("adopted browser lifecycle (review fix 6)", () => {
 describe("relay logging (user report: no logs)", () => {
 	it("logs moderator and browser lifecycle events", async () => {
 		const logs: string[] = [];
-		const relay = createRelay({ pageDir: "src", pingMs: 1000, onLog: (m) => logs.push(m) });
+		const relay = createRelay({ pageDir: "page", pingMs: 1000, onLog: (m) => logs.push(m) });
 		await new Promise<void>((r) => relay.server.listen(0, "127.0.0.1", r));
 		const port = (relay.server.address() as any).port;
 		const ws = new WebSocket(`ws://127.0.0.1:${port}/presenter`);

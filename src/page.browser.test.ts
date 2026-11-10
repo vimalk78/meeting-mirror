@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 
 const realPageBody = (): string =>
-	readFileSync("page.html", "utf8").replace(/[\s\S]*<body[^>]*>/, "").replace(/<script[\s\S]*<\/body>[\s\S]*/, "");
+	readFileSync("page/page.html", "utf8").replace(/[\s\S]*<body[^>]*>/, "").replace(/<script[\s\S]*<\/body>[\s\S]*/, "");
 
 let stream: { onmessage?: (event: { data: string }) => void; src: string };
 const poll = { question: "Choose", options: [{ key: "A", label: "One" }, { key: "B", label: "Two" }] };
@@ -19,7 +19,7 @@ function texts() {
 
 async function boot(path: string) {
 	window.history.replaceState({}, "", path);
-	await import("./page.js");
+	await import("../page/page.js");
 }
 async function reset(path: string) {
 	vi.resetModules();
@@ -155,7 +155,7 @@ describe("page wiring", () => {
 
 describe("membersText", () => {
 	it("formats poll, no-poll and empty cases", async () => {
-		const { membersText } = await import("./page.js");
+		const { membersText } = await import("../page/page.js");
 		expect(membersText({ members: [{ name: "Alice", voted: true }, { name: "Bob", voted: false }], voteCount: 1 })).toBe(
 			"In the room: Alice ✓, Bob (1 vote cast)",
 		);
@@ -165,14 +165,14 @@ describe("membersText", () => {
 		expect(membersText({ members: [], voteCount: null })).toBe("");
 	});
 	it("does not divide total votes by present members when voters departed", async () => {
-		const { membersText } = await import("./page.js");
+		const { membersText } = await import("../page/page.js");
 		expect(membersText({ members: [{ name: "Ann", voted: true }], voteCount: 3 })).toBe("In the room: Ann ✓ (3 votes cast)");
 	});
 });
 
 describe("real page markup (review fix 2)", () => {
 	it("page.html contains every element page.js looks up", async () => {
-		const html = readFileSync("page.html", "utf8");
+		const html = readFileSync("page/page.html", "utf8");
 		for (const id of ["identify-overlay", "identity-chip", "transcript", "poll-card", "jump-latest", "members", "waiting", "identify-error", "username-input", "username-button"]) {
 			expect(html, `page.html must contain #${id}`).toMatch(new RegExp(`id="${id}"`));
 		}
@@ -182,7 +182,7 @@ describe("real page markup (review fix 2)", () => {
 		localStorage.clear();
 		document.body.innerHTML = realPageBody();
 		window.history.replaceState({}, "", "/s/ols-4596?key=K");
-		await import("./page.js");
+		await import("../page/page.js");
 		send({ type: "waiting" });
 		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(false);
 		send({ type: "members", members: [{ name: "Ann", voted: true }], voteCount: 1 });
@@ -205,7 +205,7 @@ describe("poll status updates live (user report: 0 votes in)", () => {
 
 describe("member line stays visible (user reports: scrolls away, hovers over text)", () => {
 	it("page.css pins .members to the side and .banner to the top, and the transcript keeps clear of fixed elements", () => {
-		const css = readFileSync("page.css", "utf8");
+		const css = readFileSync("page/page.css", "utf8");
 		const rule = (sel: string): string => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
 		// member line: fixed, docked to the side so it never covers the reading column
 		expect(rule(".members")).toMatch(/position:\s*fixed/);
@@ -221,7 +221,7 @@ describe("member line stays visible (user reports: scrolls away, hovers over tex
 
 describe("all-voted notice (moderator guidance)", () => {
 	it("fires only when every present member has voted on an open poll", async () => {
-		const { allVotedNotice } = await import("./page.js");
+		const { allVotedNotice } = await import("../page/page.js");
 		const snap = (over: Record<string, unknown> = {}) => ({ messages: [], poll, revealed: null, voteCount: 0, pollAnchor: 0, ...over });
 		const two = { members: [{ name: "A", voted: true }, { name: "B", voted: true }], voteCount: 2 };
 		expect(allVotedNotice(snap({ voteCount: 2 }), two)).toBe(

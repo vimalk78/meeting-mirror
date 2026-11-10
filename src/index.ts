@@ -9,7 +9,7 @@ import { STORED_ROOM_TYPE, findStoredRoom, type Room } from "./rooms.js";
 import { decideShare } from "./index-share.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
-import { membersText, allVotedNotice } from "./page.js";
+import { membersText, allVotedNotice } from "../page/page.js";
 
 /** Human-readable poll result, used for the terminal notify and the
  * injected session message. */

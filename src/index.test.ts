@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { nthLastAssistant, isConversationMessage } from "./index-helpers.js";
-import { escapeHtml, renderMarkdown, renderTally, formatMessage } from "./page.js";
+import { escapeHtml, renderMarkdown, renderTally, formatMessage } from "../page/page.js";
 import { resyncFromBranch } from "./index-helpers.js";
 import { formatPollResult } from "./index.js";
 import type { MirrorMessage } from "./state.js";

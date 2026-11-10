@@ -154,7 +154,7 @@ export class LocalServer implements Transport {
 
 	private serveFile(res: ServerResponse, name: string): void {
 		try {
-			const content = readFileSync(join(HERE, name));
+			const content = readFileSync(join(HERE, "../page", name));
 			const ext = name.slice(name.lastIndexOf("."));
 			const headers: Record<string, string> = {
 				"content-type": MIME[ext] ?? "application/octet-stream",

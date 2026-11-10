@@ -3,7 +3,7 @@ import WebSocket from "ws";
 import { MirrorState } from "./state.js";
 import { Hub } from "./hub.js";
 import { RelayClient, RoomBusyError } from "./relay-client.js";
-import { createRelay, type RelayHandle } from "./relay/src/server.js";
+import { createRelay, type RelayHandle } from "../relay/src/server.js";
 import type { Room } from "./rooms.js";
 
 const PAGE_DIR = new URL(".", import.meta.url).pathname;

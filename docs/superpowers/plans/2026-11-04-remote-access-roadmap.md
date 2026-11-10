@@ -60,6 +60,10 @@ both starting from the same code.
 
 ## Parked
 
+- Poll persistence across /reload and restarts via `pi.appendEntry()`
+  (currently polls are in-memory only; accepted limitation, documented
+  in README).
+
 - Merge `feat/meeting-mirror` to main and tag (checkpoint after relay
   or earlier on request).
 - `/mirror` printing a session label for distinguishing shared

@@ -59,6 +59,14 @@ same office LAN or VPN. The transport is pluggable by design: a relay mode
 for internal hosts where peer-to-peer access is blocked is planned (see the
 [design doc](docs/superpowers/specs/2026-11-03-meeting-mirror-design.md)).
 
+**Known limitation — polls are in-memory only.** Poll state (question,
+options, votes) lives in the extension's memory: it does not survive
+`/reload`, a pi restart, or `/mirror unshare`-plus-restart. The
+transcript does survive (it is reseeded from the session file), so after
+a reload you will see the conversation but not an open poll. Close or
+finish polls before reloading. Persisting polls is a known future item
+(see the roadmap).
+
 **Security note:** the share URL contains a per-session key — it is the
 only credential. Anyone who can reach the port *and* has the URL can read
 the transcript and vote; anyone without the key gets nothing (all

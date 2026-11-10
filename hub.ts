@@ -95,11 +95,16 @@ export class Hub {
 		}
 		const name = username.trim().slice(0, 40);
 		for (const [id, bound] of this.bound) {
-			if (bound === name && id !== clientId && this.present(id)) {
-				return {
-					status: 409,
-					body: { error: `${name} is already in the room. Choose another name, for example ${name} K.` },
-				};
+			if (bound === name && id !== clientId) {
+				if (this.present(id)) {
+					return {
+						status: 409,
+						body: { error: `${name} is already in the room. Choose another name, for example ${name} K.` },
+					};
+				}
+				// the previous owner left: taking the name over drops their binding,
+				// so a returning browser must re-identify instead of doubling the name
+				this.bound.delete(id);
 			}
 		}
 		const renamed = this.bound.get(clientId) !== name;

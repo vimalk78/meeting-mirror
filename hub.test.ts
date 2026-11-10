@@ -199,3 +199,17 @@ describe("Hub sessionId", () => {
 		expect(h.open("c1").snapshot.sessionId).toBe(h.sessionId);
 	});
 });
+
+describe("name handover (review fix 5)", () => {
+	it("taking over a departed member's name drops the old binding", () => {
+		const hub = new Hub(new MirrorState());
+		expect(hub.identify({ clientId: "c1", username: "John" }).status).toBe(200);
+		hub.close(hub.open("c1").connId); // John's browser leaves
+		expect(hub.identify({ clientId: "c2", username: "John" }).status).toBe(200);
+		hub.open("c2");
+		// the original browser reconnects: it must re-identify, not silently be John again
+		const reopened = hub.open("c1");
+		expect(reopened.snapshot.you).toBe(null);
+		expect(hub.memberList().members.map((m) => m.name)).toEqual(["John"]);
+	});
+});

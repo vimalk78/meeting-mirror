@@ -13,14 +13,12 @@ export function createRelay(opts: {
 	pageDir: string;
 	heartbeatMs?: number;
 	pingMs?: number;
-	presenterTimeoutMs?: number;
 	requestTimeoutMs?: number;
 	maxConnsPerRoom?: number;
 	maxConnsTotal?: number;
 }): RelayHandle {
 	const heartbeatMs = opts.heartbeatMs ?? 25000;
 	const pingMs = opts.pingMs ?? 15000;
-	const presenterTimeoutMs = opts.presenterTimeoutMs ?? 30000;
 	const requestTimeoutMs = opts.requestTimeoutMs ?? 10000;
 	const maxConnsPerRoom = opts.maxConnsPerRoom ?? 200;
 	const maxConnsTotal = opts.maxConnsTotal ?? 2000;
@@ -88,15 +86,19 @@ export function createRelay(opts: {
 			connection: "keep-alive",
 		});
 		const conn = Math.random().toString(36).slice(2) + Date.now().toString(36);
+		const notifyClose = (): void => {
+			room.conns.delete(conn);
+			// always tell the moderator when a browser goes away - the socket
+			// may have been adopted after being parked (presenter arrived later)
+			if (room.presenter) sendToModerator(room, { t: "close", conn });
+			sweep();
+		};
 		if (!room.presenter || room.presenter.key !== key) {
 			if (!room.presenter) {
 				// parked: wait for a moderator, validate the key when one arrives
 				res.write(`data: ${JSON.stringify({ type: "waiting" })}\n\n`);
 				room.conns.set(conn, { res, client, key });
-				res.on("close", () => {
-					room.conns.delete(conn);
-					sweep();
-				});
+				res.on("close", notifyClose);
 				return;
 			}
 			res.write(`data: ${JSON.stringify({ type: "invalid_key" })}\n\n`);
@@ -105,18 +107,13 @@ export function createRelay(opts: {
 		}
 		room.conns.set(conn, { res, client, key });
 		sendToModerator(room, { t: "open", conn, client });
-		res.on("close", () => {
-			room.conns.delete(conn);
-			if (room.presenter) sendToModerator(room, { t: "close", conn });
-			sweep();
-		});
+		res.on("close", notifyClose);
 	};
 
 	// When a moderator attaches, parked browsers with the matching key get opened.
 	const adoptParked = (room: Room): void => {
 		for (const [conn, entry] of [...room.conns]) {
 			if (entry.key === room.presenter?.key) {
-				entry.res.write(`data: ${JSON.stringify({ type: "__adopted__" })}\n\n`);
 				sendToModerator(room, { t: "open", conn, client: entry.client });
 			} else {
 				entry.res.write(`data: ${JSON.stringify({ type: "invalid_key" })}\n\n`);
@@ -128,7 +125,6 @@ export function createRelay(opts: {
 
 	const handlePresenter = (ws: WebSocket): void => {
 		let room: Room | null = null;
-		let ourKey = "";
 		let alive = true;
 		const pong = (): void => {
 			alive = true;
@@ -189,7 +185,6 @@ export function createRelay(opts: {
 						target.presenter = { ws, key: msg.key };
 					}
 					room = target;
-					ourKey = msg.key;
 					ws.send(JSON.stringify({ t: "welcome" }));
 					adoptParked(room);
 				}
@@ -209,7 +204,6 @@ export function createRelay(opts: {
 				}
 			}
 		});
-		void ourKey;
 	};
 
 	const handlePost = (room: Room, kind: "identify" | "vote", req: IncomingMessage, res: ServerResponse): void => {
@@ -339,7 +333,6 @@ export function createRelay(opts: {
 		}
 	}, heartbeatMs);
 	heartbeatTimer.unref?.();
-	pingTimerRef = heartbeatTimer;
 
 	return {
 		server,
@@ -360,6 +353,3 @@ export function createRelay(opts: {
 		},
 	};
 }
-
-// keep a module-level ref so tests can clear timers if needed
-let pingTimerRef: ReturnType<typeof setInterval> | null = null;

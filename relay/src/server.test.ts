@@ -95,6 +95,9 @@ function browserSse(base: string, name: string, key: string, client: string): {
 		})();
 		while (events.length === 0) await new Promise((r) => setTimeout(r, 10));
 	})();
+	ready.catch(() => {
+		/* aborted before the first frame: not a test failure */
+	});
 	return { events, ready, close: () => controller.abort() };
 }
 
@@ -291,7 +294,7 @@ describe("relay presenter protocol", () => {
 	});
 
 	it("heartbeats: SSE ping comments; silent moderator dropped after timeout, browsers get waiting", async () => {
-		const { base, wsUrl, handle } = await startRelay({ heartbeatMs: 50, pingMs: 30, presenterTimeoutMs: 150 });
+		const { base, wsUrl, handle } = await startRelay({ heartbeatMs: 50, pingMs: 30 });
 		const mod = await connectModerator(wsUrl, /* autoPong */ false);
 		send(mod.ws, { t: "hello", room: "ols-4596", key: "k1" });
 		await mod.next();
@@ -329,5 +332,33 @@ describe("relay presenter protocol", () => {
 		mod.ws.close();
 		await new Promise((r) => setTimeout(r, 100));
 		expect(handle.roomCount()).toBe(0);
+	});
+});
+
+describe("adopted browser lifecycle (review fix 6)", () => {
+	it("reports close to the moderator for a browser that was parked then adopted", async () => {
+		const relay = createRelay({ pageDir: "src", pingMs: 1000 });
+		await new Promise<void>((r) => relay.server.listen(0, "127.0.0.1", r));
+		const port = (relay.server.address() as any).port;
+		// browser parks before any moderator exists
+		const ctl = new AbortController();
+		const res = await fetch(`http://127.0.0.1:${port}/s/ols-x/events?key=k&client=c1`, { signal: ctl.signal });
+		const reader = res.body!.getReader();
+		await reader.read(); // waiting frame
+		// moderator arrives with the matching key → browser is adopted
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/presenter`);
+		const got: any[] = [];
+		ws.on("message", (d) => got.push(JSON.parse(String(d))));
+		await new Promise((r) => (ws.on("open", r)));
+		ws.send(JSON.stringify({ t: "hello", room: "ols-x", key: "k" }));
+		await new Promise((r) => setTimeout(r, 100));
+		expect(got.filter((m) => m.t === "open").length).toBe(1);
+		// browser closes → moderator must be told
+		ctl.abort();
+		res.body!.cancel().catch(() => {});
+		await new Promise((r) => setTimeout(r, 200));
+		expect(got.filter((m) => m.t === "close").length).toBe(1);
+		ws.close();
+		await relay.close();
 	});
 });

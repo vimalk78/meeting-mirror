@@ -30,6 +30,10 @@ metadata:
   name: relay
   labels:
     app: meeting-mirror-relay
+  annotations:
+    # auto-roll the pods when a new relay:latest is built by the BuildConfig
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"relay:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"relay\")].image"}]
 spec:
   replicas: 1
   strategy:

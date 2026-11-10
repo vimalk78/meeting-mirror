@@ -94,6 +94,11 @@ and `/mirror share` again. If the session file is unavailable,
 `/mirror share <original link>` restores the room and link, but shows the
 current session's conversation.
 
+Note: a page opened with a key that does not match the room shows
+"This link is not valid for this room." and stops updating. After the
+right moderator shares the room, such a page must be reloaded with the
+correct link.
+
 **Deploying the relay** (OpenShift):
 
 ```bash

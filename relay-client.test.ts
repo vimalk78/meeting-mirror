@@ -205,3 +205,34 @@ describe("RelayClient", () => {
 
 // keep ws referenced for type-compat in the test file
 void WebSocket;
+
+describe("unreachable relay (review fix 3)", () => {
+	it("start() rejects after exhausting connect attempts instead of hanging", async () => {
+		const client = new RelayClient(new Hub(new MirrorState()), { relay: "http://127.0.0.1:1", name: "ols-x", key: "k" }, { backoffMs: [10, 10], maxConnectAttempts: 3 });
+		await expect(client.start()).rejects.toThrow(/relay/i);
+	});
+});
+
+describe("busy during reconnect (review fix 4)", () => {
+	it("reports the room lost instead of retrying forever", async () => {
+		const relay = createRelay({ pageDir: "relay/src", pingMs: 1000 });
+		await new Promise<void>((r) => relay.server.listen(0, "127.0.0.1", r));
+		const port = (relay.server.address() as any).port;
+		const base = `http://127.0.0.1:${port}`;
+		const hub1 = new Hub(new MirrorState());
+		const lost: string[] = [];
+		const client = new RelayClient(hub1, { relay: base, name: "ols-x", key: "k1" }, { backoffMs: [30], onLost: (reason) => lost.push(reason) });
+		await client.start();
+		// relay drops the presenter; another moderator takes the room before we reconnect
+		await relay.close();
+		const relay2 = createRelay({ pageDir: "relay/src", pingMs: 1000 });
+		await new Promise<void>((r) => relay2.server.listen(port, "127.0.0.1", r));
+		const client2 = new RelayClient(new Hub(new MirrorState()), { relay: base, name: "ols-x", key: "k2" }, { backoffMs: [30] });
+		await client2.start();
+		await new Promise((r) => setTimeout(r, 300));
+		expect(lost).toContain("busy");
+		await client.stop();
+		await client2.stop();
+		await relay2.close();
+	});
+});

@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+
+const realPageBody = (): string =>
+	readFileSync("page.html", "utf8").replace(/[\s\S]*<body[^>]*>/, "").replace(/<script[\s\S]*<\/body>[\s\S]*/, "");
 
 let stream: { onmessage?: (event: { data: string }) => void; src: string };
 const poll = { question: "Choose", options: [{ key: "A", label: "One" }, { key: "B", label: "Two" }] };
@@ -125,7 +129,7 @@ describe("page wiring", () => {
 		await reset("/?key=K");
 		await boot("/?key=K");
 		send({ type: "members", members: [{ name: "Alice", voted: true }, { name: "Bob", voted: false }], voteCount: 1 });
-		expect(document.getElementById("members")!.textContent).toBe("In the room: Alice ✓, Bob (1 of 2 voted)");
+		expect(document.getElementById("members")!.textContent).toBe("In the room: Alice ✓, Bob (1 vote cast)");
 		send({ type: "members", members: [{ name: "Alice", voted: false }, { name: "Bob", voted: false }], voteCount: null });
 		expect(document.getElementById("members")!.textContent).toBe("In the room: Alice, Bob (2)");
 	});
@@ -153,11 +157,35 @@ describe("membersText", () => {
 	it("formats poll, no-poll and empty cases", async () => {
 		const { membersText } = await import("./page.js");
 		expect(membersText({ members: [{ name: "Alice", voted: true }, { name: "Bob", voted: false }], voteCount: 1 })).toBe(
-			"In the room: Alice ✓, Bob (1 of 2 voted)",
+			"In the room: Alice ✓, Bob (1 vote cast)",
 		);
 		expect(membersText({ members: [{ name: "Alice", voted: false }, { name: "Bob", voted: false }], voteCount: null })).toBe(
 			"In the room: Alice, Bob (2)",
 		);
 		expect(membersText({ members: [], voteCount: null })).toBe("");
+	});
+	it("does not divide total votes by present members when voters departed", async () => {
+		const { membersText } = await import("./page.js");
+		expect(membersText({ members: [{ name: "Ann", voted: true }], voteCount: 3 })).toBe("In the room: Ann ✓ (3 votes cast)");
+	});
+});
+
+describe("real page markup (review fix 2)", () => {
+	it("page.html contains every element page.js looks up", async () => {
+		const html = readFileSync("page.html", "utf8");
+		for (const id of ["identify-overlay", "identity-chip", "transcript", "poll-card", "jump-latest", "members", "waiting", "identify-error", "username-input", "username-button"]) {
+			expect(html, `page.html must contain #${id}`).toMatch(new RegExp(`id="${id}"`));
+		}
+	});
+	it("renders the member list and waiting banner from the real page.html", async () => {
+		vi.resetModules();
+		localStorage.clear();
+		document.body.innerHTML = realPageBody();
+		window.history.replaceState({}, "", "/s/ols-4596?key=K");
+		await import("./page.js");
+		send({ type: "waiting" });
+		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(false);
+		send({ type: "members", members: [{ name: "Ann", voted: true }], voteCount: 1 });
+		expect(document.getElementById("members")!.textContent).toContain("Ann ✓");
 	});
 });

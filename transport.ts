@@ -178,21 +178,23 @@ export class LocalServer implements Transport {
 			res.end(JSON.stringify({ error: "client parameter required" }));
 			return;
 		}
-		res.writeHead(200, {
-			"content-type": "text/event-stream",
-			"cache-control": "no-cache",
-			connection: "keep-alive",
-		});
 		let connId: string;
+		let snapshot: unknown;
 		try {
 			const opened = this.hub.open(client);
 			connId = opened.connId;
-			res.write(`data: ${JSON.stringify(opened.snapshot)}\n\n`);
+			snapshot = opened.snapshot;
 		} catch {
 			res.writeHead(503, { "content-type": "application/json" });
 			res.end(JSON.stringify({ error: "too many connections" }));
 			return;
 		}
+		res.writeHead(200, {
+			"content-type": "text/event-stream",
+			"cache-control": "no-cache",
+			connection: "keep-alive",
+		});
+		res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
 		this.sseClients.add(res);
 		res.on("close", () => {
 			this.sseClients.delete(res);

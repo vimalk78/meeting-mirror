@@ -24,6 +24,8 @@ export class RelayClient {
 		private opts: {
 			onLost?: (reason: "replaced" | "busy") => void;
 			backoffMs?: number[];
+			/** Failed initial connects before start() gives up and rejects. */
+			maxConnectAttempts?: number;
 		} = {},
 	) {}
 
@@ -37,6 +39,8 @@ export class RelayClient {
 
 	start(): Promise<void> {
 		this.stopped = false;
+		this.everWelcomed = false;
+		this.connectCount = 0;
 		this.helloPromise = this.connect(0);
 		return this.helloPromise;
 	}
@@ -66,6 +70,7 @@ export class RelayClient {
 				resolve();
 				return;
 			}
+			this.connectCount = (this.connectCount ?? 0) + 1;
 			const origin = this.room.relay.replace(/^http/, "ws");
 			const ws = new WebSocket(`${origin}/presenter`);
 			this.ws = ws;
@@ -76,17 +81,25 @@ export class RelayClient {
 					resolve();
 					return;
 				}
-				// first attempt (hello never welcomed) surfaces busy immediately
-				if (attempt === 0 && err instanceof RoomBusyError) {
+				const wasEstablished = this.hubUnsubscribe !== null;
+				// clean up hub state the same way a close would
+				if (wasEstablished) this.teardownHub();
+				if (err instanceof RoomBusyError) {
+					if (this.everWelcomed) {
+						// someone took the room while we were reconnecting: give it up
+						this.stopped = true;
+						this.opts.onLost?.("busy");
+						resolve();
+						return;
+					}
 					reject(err);
 					return;
 				}
-				if (attempt === 0) {
-					// initial connect failed: retry with backoff, resolve when up
-					this.scheduleReconnect(resolve, reject);
+				if (!this.everWelcomed && (this.connectCount ?? 0) >= (this.opts.maxConnectAttempts ?? 5)) {
+					reject(new Error(`relay unreachable after ${this.connectCount} attempts: ${this.room.relay}`));
 					return;
 				}
-				this.scheduleReconnect();
+				this.scheduleReconnect(resolve, reject);
 			};
 
 			ws.on("open", () => {
@@ -104,6 +117,9 @@ export class RelayClient {
 					case "welcome": {
 						this.hubUnsubscribe?.();
 						this.hubUnsubscribe = this.hub.subscribe((event) => this.onHubEvent(event));
+						this.reconnectAttempt = 0; // backoff starts over after a welcome
+						this.connectCount = 0;
+						this.everWelcomed = true;
 						resolve();
 						break;
 					}
@@ -151,10 +167,7 @@ export class RelayClient {
 				if (this.stopped) return;
 				// dropped after being welcomed: reconnect with backoff
 				if (this.hubUnsubscribe) {
-					this.hubUnsubscribe?.();
-					this.hubUnsubscribe = null;
-					for (const connId of this.connMap.values()) this.hub.close(connId);
-					this.connMap.clear();
+					this.teardownHub();
 					this.scheduleReconnect();
 				}
 			});
@@ -169,13 +182,20 @@ export class RelayClient {
 			this.reconnectTimer = null;
 			this.connect(this.reconnectAttempt ?? 1)
 				.then(() => resolve?.())
-				.catch((err) => {
-					if (reject && err instanceof RoomBusyError) reject(err);
-				});
+				.catch((err) => reject?.(err));
 		}, delay);
 	}
 
 	private reconnectAttempt: number | undefined;
+	private connectCount: number | undefined;
+	private everWelcomed = false;
+
+	private teardownHub(): void {
+		this.hubUnsubscribe?.();
+		this.hubUnsubscribe = null;
+		for (const connId of this.connMap.values()) this.hub.close(connId);
+		this.connMap.clear();
+	}
 
 	private send(msg: unknown): void {
 		if (this.ws && this.ws.readyState === WebSocket.OPEN) {

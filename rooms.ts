@@ -55,8 +55,9 @@ export function parseShareArgs(
 ): { kind: "default" } | { kind: "name"; name: string } | { kind: "link"; room: Room } {
 	const trimmed = args.trim();
 	if (trimmed === "") return { kind: "default" };
-	if (trimmed.includes("://")) return { kind: "link", room: parseRoomLink(trimmed) };
-	if (isRoomName(trimmed)) return { kind: "name", name: trimmed };
+	const stripped = trimmed.replace(/\/+$/, "");
+	if (stripped.includes("://")) return { kind: "link", room: parseRoomLink(stripped) };
+	if (isRoomName(stripped)) return { kind: "name", name: stripped };
 	throw new ShareArgError(
 		`Invalid /mirror share argument. Use "/mirror share", "/mirror share <room-name>", or "/mirror share <full link>".`,
 	);

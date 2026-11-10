@@ -12,11 +12,14 @@
 		<h1>Meeting Mirror</h1>
 		<p>Enter your name to join:</p>
 		<input id="username-input" type="text" maxlength="40" autocomplete="off">
+		<p id="identify-error" class="identify-error"></p>
 		<button id="username-button">Join</button>
 	</div>
 </div>
 <div id="identity-chip" class="identity-chip hidden"></div>
 <main id="transcript" class="transcript"><div id="poll-card" class="poll-card" aria-live="polite"></div></main>
+<div id="waiting" class="banner hidden">Waiting for the moderator…</div>
+<div id="members" class="members hidden"></div>
 <button id="jump-latest" class="jump-latest hidden">↓ Jump to latest</button>
 <script type="module" src="/page.js"></script>
 </body>

@@ -22,6 +22,8 @@ export function decideShare(
 	storedByName: (name: string) => Room | null,
 	envRelay: string | undefined,
 ): ShareDecision {
+	const relayUrl = envRelay?.replace(/\/+$/, "");
+	const envRelayClean = !relayUrl ? undefined : relayUrl;
 	let parsed;
 	try {
 		parsed = parseShareArgs(args);
@@ -38,12 +40,12 @@ export function decideShare(
 	if (parsed.kind === "name") {
 		const existing = storedByName(parsed.name);
 		if (existing) return { mode: "relay", room: existing, isNew: false, needsConfirm: false };
-		if (!envRelay) {
+		if (!envRelayClean) {
 			return { mode: "error", message: "Room names need relay mode (set MEETING_MIRROR_RELAY)." };
 		}
 		return {
 			mode: "relay",
-			room: { relay: envRelay, name: parsed.name, key: randomKey() },
+			room: { relay: envRelayClean, name: parsed.name, key: randomKey() },
 			isNew: true,
 			needsConfirm: true,
 		};
@@ -51,10 +53,10 @@ export function decideShare(
 
 	// default: stored room, else env relay, else local
 	if (stored) return { mode: "relay", room: stored, isNew: false, needsConfirm: false };
-	if (envRelay) {
+	if (envRelayClean) {
 		return {
 			mode: "relay",
-			room: { relay: envRelay, name: randomRoomName(), key: randomKey() },
+			room: { relay: envRelayClean, name: randomRoomName(), key: randomKey() },
 			isNew: true,
 			needsConfirm: false,
 		};

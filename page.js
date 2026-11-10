@@ -150,8 +150,10 @@ export function formatMessage(m) {
 export function membersText(list) {
 	if (!list || list.members.length === 0) return "";
 	const names = list.members.map((m) => `${m.name}${m.voted ? " ✓" : ""}`).join(", ");
-	if (list.voteCount !== null && list.voteCount !== undefined) {
-		return `In the room: ${names} (${list.voteCount} of ${list.members.length} voted)`;
+	if (list.voteCount !== null && list.voteCount !== undefined && list.voteCount > 0) {
+		// voteCount includes voters who already left, so never divide it by
+		// the number of members still present
+		return `In the room: ${names} (${list.voteCount} vote${list.voteCount === 1 ? "" : "s"} cast)`;
 	}
 	return `In the room: ${names} (${list.members.length})`;
 }

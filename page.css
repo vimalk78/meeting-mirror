@@ -201,3 +201,20 @@ body {
 }
 .identity-chip:hover { border-color: var(--accent); }
 .identity-chip.hidden { display: none; }
+.identify-error { color: #a03030; min-height: 1.2em; margin: 4px 0; font-size: 0.9em; }
+.banner {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 13px;
+	color: var(--muted);
+	text-align: center;
+	padding: 8px;
+}
+.banner.hidden { display: none; }
+.members {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 12px;
+	color: var(--muted);
+	text-align: center;
+	padding: 0 16px 12px;
+}
+.members.hidden { display: none; }

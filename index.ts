@@ -171,9 +171,6 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 			);
 			if (answer !== "Yes, start a new room") return;
 		}
-		if (decision.isNew && stored?.name === room.name) {
-			// replacing a stored room's key deliberately: record the new one below
-		}
 		const client = new RelayClient(hub!, room, {
 			onLost: (reason) => {
 				server = null;

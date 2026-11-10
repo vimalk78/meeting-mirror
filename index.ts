@@ -81,6 +81,9 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		return Number.isInteger(n) && n > 0 && n < 65536 ? n : undefined;
 	})();
 
+	/** Bind address from MEETING_MIRROR_HOST (e.g. "127.0.0.1", "wt0" IP), else all interfaces. */
+	const configuredHost = process.env.MEETING_MIRROR_HOST?.trim() || undefined;
+
 	pi.on("session_start", async (_event, ctx) => {
 		state = new MirrorState();
 		seenEntries.clear();
@@ -106,12 +109,12 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 			return;
 		}
 		const s = ensureState();
-		server = new LocalServer(s, { port: configuredPort });
+		server = new LocalServer(s, { port: configuredPort, host: configuredHost });
 		try {
 			await server.start();
 			const port = server.url.split(":").pop();
-			const urls = allAddresses().map((a) => `http://${a}:${port}`);
-			ctx.ui.notify(`Meeting Mirror page: ${server.url}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
+			const urls = allAddresses().map((a) => `http://${a}:${port}/?key=${server!.key}`);
+			ctx.ui.notify(`Meeting Mirror page: ${server.pageUrl}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
 		} catch (err) {
 			server = null;
 			ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
@@ -155,7 +158,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 				: snapshot.revealed
 					? `poll revealed: ${snapshot.poll.question} (${snapshot.voteCount} votes)`
 					: `poll open: ${snapshot.poll.question} (${snapshot.voteCount} votes in, hidden)`;
-			ctx.ui.notify(`${server.url} — ${votes}`, "info");
+			ctx.ui.notify(`${server.pageUrl} — ${votes}`, "info");
 		},
 	});
 

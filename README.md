@@ -59,9 +59,14 @@ same office LAN or VPN. The transport is pluggable by design: a relay mode
 for internal hosts where peer-to-peer access is blocked is planned (see the
 [design doc](docs/superpowers/specs/2026-11-03-meeting-mirror-design.md)).
 
-**Security note:** anyone who can reach the URL can read the session
-transcript and vote. There is no authentication beyond the username. On a
-trusted internal network this is usually fine; on anything else, don't.
+**Security note:** the share URL contains a per-session key — it is the
+only credential. Anyone who can reach the port *and* has the URL can read
+the transcript and vote; anyone without the key gets nothing (all
+endpoints reject it). The key is random per session, so a URL from a
+previous meeting never works on the next one. Still, treat the share link
+like any internal document: send it to the meeting, not to a broad
+channel. Set `MEETING_MIRROR_HOST` (e.g. `127.0.0.1` or a NetBird IP) to
+bind a specific interface instead of all of them.
 
 ## Development
 

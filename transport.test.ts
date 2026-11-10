@@ -16,19 +16,19 @@ afterEach(async () => {
 	server = null;
 });
 
-async function start(): Promise<{ state: MirrorState; base: string }> {
+async function start(): Promise<{ state: MirrorState; base: string; key: string }> {
 	const state = new MirrorState();
 	server = new LocalServer(state, { port: 0 });
 	await server.start();
-	return { state, base: server.url };
+	return { state, base: server.url, key: server.key };
 }
 
 /** Open an SSE connection; returns a queue of parsed events and a close fn. */
-function sseConnect(base: string): { events: any[]; ready: Promise<void>; close: () => void } {
+function sseConnect(base: string, key?: string): { events: any[]; ready: Promise<void>; close: () => void } {
 	const events: any[] = [];
 	const controller = new AbortController();
 	const ready = (async () => {
-		const res = await fetch(`${base}/events`, { signal: controller.signal });
+		const res = await fetch(`${base}/events${key ? `?key=${key}` : ""}`, { signal: controller.signal });
 		const reader = res.body!.getReader();
 		const decoder = new TextDecoder();
 		let buf = "";
@@ -58,8 +58,8 @@ function sseConnect(base: string): { events: any[]; ready: Promise<void>; close:
 
 describe("LocalServer", () => {
 	it("GET / returns 200 with HTML", async () => {
-		const { base } = await start();
-		const res = await fetch(`${base}/`);
+		const { base, key } = await start();
+		const res = await fetch(`${base}/?key=${key}`);
 		expect(res.status).toBe(200);
 		expect(res.headers.get("content-type")).toContain("text/html");
 		const body = await res.text();
@@ -67,15 +67,15 @@ describe("LocalServer", () => {
 	});
 
 	it("GET /page.css and /page.js serve their files", async () => {
-		const { base } = await start();
-		expect((await fetch(`${base}/page.css`)).status).toBe(200);
-		expect((await fetch(`${base}/page.js`)).status).toBe(200);
+		const { base, key } = await start();
+		expect((await fetch(`${base}/page.css?key=${key}`)).status).toBe(200);
+		expect((await fetch(`${base}/page.js?key=${key}`)).status).toBe(200);
 	});
 
 	it("SSE connection receives snapshot with a sessionId", async () => {
-		const { state, base } = await start();
+		const { state, base, key } = await start();
 		state.appendMessage({ role: "user", text: "prior", timestamp: 1 });
-		const conn = sseConnect(base);
+		const conn = sseConnect(base, key);
 		await conn.ready;
 		expect(conn.events[0]).toMatchObject({
 			type: "snapshot",
@@ -86,8 +86,8 @@ describe("LocalServer", () => {
 	});
 
 	it("a restarted server reports a different sessionId", async () => {
-		const { state, base } = await start();
-		const conn1 = sseConnect(base);
+		const { state, base, key } = await start();
+		const conn1 = sseConnect(base, key);
 		await conn1.ready;
 		const id1 = conn1.events[0].sessionId;
 		conn1.close();
@@ -95,15 +95,15 @@ describe("LocalServer", () => {
 		const server2 = new LocalServer(state, { port: 0 });
 		server = server2;
 		await server2.start();
-		const conn2 = sseConnect(server2.url);
+		const conn2 = sseConnect(server2.url, server2.key);
 		await conn2.ready;
 		expect(conn2.events[0].sessionId).not.toBe(id1);
 		conn2.close();
 	});
 
 	it("appendMessage after connect → SSE receives transcript_delta", async () => {
-		const { state, base } = await start();
-		const conn = sseConnect(base);
+		const { state, base, key } = await start();
+		const conn = sseConnect(base, key);
 		await conn.ready;
 		state.appendMessage({ role: "assistant", text: "live", timestamp: 2 });
 		await new Promise((r) => setTimeout(r, 100));
@@ -116,18 +116,18 @@ describe("LocalServer", () => {
 	});
 
 	it("poll flow: open, vote, reveal → SSE receives poll_reveal with username", async () => {
-		const { state, base } = await start();
-		const conn = sseConnect(base);
+		const { state, base, key } = await start();
+		const conn = sseConnect(base, key);
 		await conn.ready;
 		state.openPoll(poll);
 
-		const idRes = await fetch(`${base}/identify`, {
+		const idRes = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice" }),
 		});
 		const { token } = await idRes.json();
-		const voteRes = await fetch(`${base}/vote`, {
+		const voteRes = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "alice", choice: "A", remark: "hi" }),
@@ -143,14 +143,14 @@ describe("LocalServer", () => {
 	});
 
 	it("vote with no poll open → 409", async () => {
-		const { base } = await start();
-		const idRes = await fetch(`${base}/identify`, {
+		const { base, key } = await start();
+		const idRes = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "x" }),
 		});
 		const { token } = await idRes.json();
-		const res = await fetch(`${base}/vote`, {
+		const res = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "x", choice: "A", remark: "" }),
@@ -159,15 +159,15 @@ describe("LocalServer", () => {
 	});
 
 	it("vote with unknown choice → 409", async () => {
-		const { state, base } = await start();
+		const { state, base, key } = await start();
 		state.openPoll(poll);
-		const idRes = await fetch(`${base}/identify`, {
+		const idRes = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "x" }),
 		});
 		const { token } = await idRes.json();
-		const res = await fetch(`${base}/vote`, {
+		const res = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "x", choice: "Z", remark: "" }),
@@ -176,8 +176,8 @@ describe("LocalServer", () => {
 	});
 
 	it("POST /identify with empty username → 400", async () => {
-		const { base } = await start();
-		const bad = await fetch(`${base}/identify`, {
+		const { base, key } = await start();
+		const bad = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "  " }),
@@ -186,7 +186,7 @@ describe("LocalServer", () => {
 	});
 
 	it("binds a non-loopback address by default so teammates can reach it", async () => {
-		const { base } = await start();
+		const { base, key } = await start();
 		// base uses the display host; verify reachability on a real local IP
 		const { networkInterfaces } = await import("node:os");
 		const nets = networkInterfaces();
@@ -195,14 +195,14 @@ describe("LocalServer", () => {
 			.find((n) => n && n.family === "IPv4" && !n.internal)?.address;
 		if (!lanIp) return; // no network besides loopback in this environment
 		const port = new URL(base).port;
-		const res = await fetch(`http://${lanIp}:${port}/`);
+		const res = await fetch(`http://${lanIp}:${port}/?key=${key}`);
 		expect(res.status).toBe(200);
 	});
 
 	it("rejects vote without a Content-Type of application/json (CSRF guard)", async () => {
-		const { state, base } = await start();
+		const { state, base, key } = await start();
 		state.openPoll(poll);
-		const res = await fetch(`${base}/vote`, {
+		const res = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "text/plain" },
 			body: JSON.stringify({ token: "t", username: "x", choice: "A", remark: "" }),
@@ -211,9 +211,9 @@ describe("LocalServer", () => {
 	});
 
 	it("identify returns a token; voting requires a matching token and username", async () => {
-		const { state, base } = await start();
+		const { state, base, key } = await start();
 		state.openPoll(poll);
-		const idRes = await fetch(`${base}/identify`, {
+		const idRes = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice" }),
@@ -223,7 +223,7 @@ describe("LocalServer", () => {
 		expect(token.length).toBeGreaterThan(10);
 
 		// vote without token → 401
-		const noToken = await fetch(`${base}/vote`, {
+		const noToken = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice", choice: "A", remark: "" }),
@@ -231,7 +231,7 @@ describe("LocalServer", () => {
 		expect(noToken.status).toBe(401);
 
 		// vote with token but wrong username → 403
-		const wrongUser = await fetch(`${base}/vote`, {
+		const wrongUser = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "bob", choice: "A", remark: "" }),
@@ -239,7 +239,7 @@ describe("LocalServer", () => {
 		expect(wrongUser.status).toBe(403);
 
 		// vote with matching token → 200
-		const ok = await fetch(`${base}/vote`, {
+		const ok = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "alice", choice: "A", remark: "" }),
@@ -248,7 +248,7 @@ describe("LocalServer", () => {
 
 		// re-identify with the same username → a second valid token
 		// (multiple tabs of one user each hold their own token)
-		const reIdentify = await fetch(`${base}/identify`, {
+		const reIdentify = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice" }),
@@ -257,13 +257,13 @@ describe("LocalServer", () => {
 		const { token: token2 } = await reIdentify.json();
 		expect(token2).not.toBe(token);
 		// both tokens work
-		const vote1 = await fetch(`${base}/vote`, {
+		const vote1 = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "alice", choice: "B", remark: "" }),
 		});
 		expect(vote1.status).toBe(200);
-		const vote2 = await fetch(`${base}/vote`, {
+		const vote2 = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token: token2, username: "alice", choice: "A", remark: "" }),
@@ -272,8 +272,8 @@ describe("LocalServer", () => {
 	});
 
 	it("rejects request bodies over 64 KiB with 413", async () => {
-		const { base } = await start();
-		const res = await fetch(`${base}/identify`, {
+		const { base, key } = await start();
+		const res = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "x", padding: "a".repeat(70000) }),
@@ -282,15 +282,15 @@ describe("LocalServer", () => {
 	});
 
 	it("caps remark length server-side", async () => {
-		const { state, base } = await start();
+		const { state, base, key } = await start();
 		state.openPoll(poll);
-		const idRes = await fetch(`${base}/identify`, {
+		const idRes = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice" }),
 		});
 		const { token } = await idRes.json();
-		const res = await fetch(`${base}/vote`, {
+		const res = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: "alice", choice: "A", remark: "r".repeat(600) }),
@@ -301,15 +301,15 @@ describe("LocalServer", () => {
 	});
 
 	it("accepts a vote whose username has stray whitespace", async () => {
-		const { state, base } = await start();
+		const { state, base, key } = await start();
 		state.openPoll(poll);
-		const idRes = await fetch(`${base}/identify`, {
+		const idRes = await fetch(`${base}/identify?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ username: "alice" }),
 		});
 		const { token } = await idRes.json();
-		const res = await fetch(`${base}/vote`, {
+		const res = await fetch(`${base}/vote?key=${key}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, username: " alice ", choice: "A", remark: "" }),
@@ -317,20 +317,46 @@ describe("LocalServer", () => {
 		expect(res.status).toBe(200);
 	});
 
+	it("rejects every request without the session key", async () => {
+		const { base, key } = await start();
+		expect((await fetch(`${base}/`)).status).toBe(403);
+		expect((await fetch(`${base}/?key=wrong`)).status).toBe(403);
+		expect((await fetch(`${base}/vote`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ username: "x", choice: "A" }),
+		})).status).toBe(403);
+		expect((await fetch(`${base}/events`)).status).toBe(403);
+	});
+
+	it("a valid key serves the page and sets a cookie; assets then work via cookie", async () => {
+		const { base, key } = await start();
+		const res = await fetch(`${base}/?key=${key}`);
+		expect(res.status).toBe(200);
+		const setCookie = res.headers.get("set-cookie") ?? "";
+		expect(setCookie).toContain("mm_key=");
+		const cookie = setCookie.split(";")[0]!;
+		const css = await fetch(`${base}/page.css`, { headers: { cookie } });
+		expect(css.status).toBe(200);
+		const events = await fetch(`${base}/events`, { headers: { cookie } });
+		expect(events.status).toBe(200);
+		await events.body?.cancel();
+	});
+
 	it("stop() closes the server", async () => {
-		const { base } = await start();
+		const { base, key } = await start();
 		const s = server!;
 		await s.stop();
-		await expect(fetch(`${base}/`)).rejects.toThrow();
+		await expect(fetch(`${base}/?key=${key}`)).rejects.toThrow();
 	});
 });
 
 describe("LocalServer identify cap", () => {
 	it("rejects identifies beyond 100 tokens", async () => {
-		const { base } = await start();
+		const { base, key } = await start();
 		let lastStatus = 200;
 		for (let i = 0; i < 502; i++) {
-			const res = await fetch(`${base}/identify`, {
+			const res = await fetch(`${base}/identify?key=${key}`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ username: `user-${i}` }),

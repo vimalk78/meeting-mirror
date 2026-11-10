@@ -26,6 +26,12 @@ export class LocalServer implements Transport {
 	private tokens = new Map<string, string>(); // token → username
 	/** Random per-instance id: lets pages detect a server restart. */
 	readonly sessionId = randomUUID();
+	/** Random session key: the share URL is the credential. */
+	readonly key = randomUUID();
+	/** Share URL including the key, for /mirror share output. */
+	get pageUrl(): string {
+		return `${this.url}/?key=${this.key}`;
+	}
 
 	constructor(
 		private state: MirrorState,
@@ -82,6 +88,11 @@ export class LocalServer implements Transport {
 
 	private handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = new URL(req.url ?? "/", "http://local");
+		if (!this.isAuthorized(req, url)) {
+			res.writeHead(403, { "content-type": "application/json" });
+			res.end(JSON.stringify({ error: "invalid or missing session key" }));
+			return;
+		}
 		if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
 			this.serveFile(res, "page.html");
 		} else if (req.method === "GET" && url.pathname === "/page.css") {
@@ -100,14 +111,32 @@ export class LocalServer implements Transport {
 		}
 	}
 
+	/**
+	 * A request is authorized when it carries the session key as a query
+	 * parameter (first page load, API calls) or as the mm_key cookie set on
+	 * that first load (assets, reloads, same-origin fetches).
+	 */
+	private isAuthorized(req: IncomingMessage, url: URL): boolean {
+		if (url.searchParams.get("key") === this.key) return true;
+		const cookie = req.headers.cookie ?? "";
+		return cookie
+			.split(";")
+			.map((part) => part.trim())
+			.some((part) => part === `mm_key=${this.key}`);
+	}
+
 	private serveFile(res: ServerResponse, name: string): void {
 		try {
 			const content = readFileSync(join(HERE, name));
 			const ext = name.slice(name.lastIndexOf("."));
-			res.writeHead(200, {
+			const headers: Record<string, string> = {
 				"content-type": MIME[ext] ?? "application/octet-stream",
 				"cache-control": "no-cache",
-			});
+			};
+			if (name === "page.html") {
+				headers["set-cookie"] = `mm_key=${this.key}; Path=/; HttpOnly; SameSite=Strict`;
+			}
+			res.writeHead(200, headers);
 			res.end(content);
 		} catch {
 			res.writeHead(500, { "content-type": "text/plain" });

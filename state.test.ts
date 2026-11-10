@@ -82,7 +82,7 @@ describe("MirrorState poll lifecycle", () => {
 		expect(() => s.castVote("u", "Z", "")).toThrow(/unknown/i);
 	});
 
-	it("castVote broadcasts vote_cast with the total vote count", () => {
+	it("castVote emits no event; voters() exposes who voted", () => {
 		const s = new MirrorState();
 		s.openPoll(poll);
 		const received: unknown[] = [];
@@ -90,11 +90,10 @@ describe("MirrorState poll lifecycle", () => {
 		s.castVote("alice", "A", "");
 		s.castVote("bob", "B", "");
 		s.castVote("alice", "B", ""); // replace, count stays 2
-		expect(received).toEqual([
-			{ type: "vote_cast", count: 1 },
-			{ type: "vote_cast", count: 2 },
-			{ type: "vote_cast", count: 2 },
-		]);
+		expect(received).toEqual([]);
+		expect(s.voters()).toEqual(["alice", "bob"]);
+		s.closePoll();
+		expect(s.voters()).toEqual([]);
 	});
 
 	it("castVote replaces an earlier vote by the same username", () => {

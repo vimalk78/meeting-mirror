@@ -20,7 +20,6 @@ export type MirrorEvent =
 	| { type: "poll_open"; poll: Poll; anchor: number }
 	| { type: "poll_reveal"; votes: VoteRecord[] }
 	| { type: "poll_close" }
-	| { type: "vote_cast"; count: number }
 	| { type: "transcript_reset"; snapshot: MirrorSnapshot };
 
 export type MirrorSnapshot = {
@@ -75,7 +74,6 @@ export class MirrorState {
 			throw new Error(`Unknown choice key: ${choice}`);
 		}
 		this.votes.set(username, { username, choice, remark: remark ?? "" });
-		this.emit({ type: "vote_cast", count: this.votes.size });
 	}
 
 	reveal(): MirrorEvent[] {
@@ -96,6 +94,11 @@ export class MirrorState {
 		this.revealed = null;
 		this.votes.clear();
 		return events;
+	}
+
+	/** Names that voted in the current poll, in insertion order. */
+	voters(): string[] {
+		return [...this.votes.keys()];
 	}
 
 	getSnapshot(): MirrorSnapshot {

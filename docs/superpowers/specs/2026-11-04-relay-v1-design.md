@@ -116,12 +116,44 @@ Start "ols-4596" as a new room? Any existing link for this room will stop workin
 - Transcript and poll events go moderator → relay → all browsers.
 - Join and vote requests go browser → relay → moderator. The moderator's
   reply goes back to that browser.
-- Each moderator connection has its own session id, so teammates are asked
-  for their name again when a different moderator, or a new pi session,
-  shares the room.
 - Heartbeats: the relay sends an SSE comment to browsers every 25 seconds,
   and the moderator connection uses ping/pong. Routers and proxies close
   idle connections otherwise.
+
+## Session id
+
+A third identifier, separate from the room name and key.
+
+| | Answers | Lifetime | Secret? |
+|---|---|---|---|
+| Room name | Which room? | Stable across meetings and moderators | No |
+| Key | Are you allowed in? | Stable; stored in the pi session | Yes |
+| Session id | Which run of the moderator's pi is serving the room now? | New when pi starts or another moderator shares; kept across reconnects | No |
+
+- The moderator's extension creates the session id when it starts and
+  sends it with every snapshot. The relay passes it along unchanged. It
+  is not stored anywhere.
+- Joined names live in the extension's memory. A new run starts with an
+  empty list, so the page compares the snapshot's session id with the one
+  it saved when the person joined, and asks for the name again if they
+  differ.
+- A reconnect of the same run (laptop wake, network drop, relay restart)
+  keeps the session id, so nobody has to rejoin.
+
+## Members and names
+
+- **One name per person.** Each browser keeps a random client id in local
+  storage. Tabs in one browser profile share it and count as one person.
+- **Name conflicts.** A name belongs to the first browser that joins with
+  it. A different browser asking for the same name gets: *"John is
+  already in the room. Choose another name, for example John K."* The
+  name becomes free again once its owner has no page open, so someone who
+  cleared their browser data can rejoin as themselves.
+- **Who is in the room.** The page shows "In the room: Alice, Bob, John
+  (3)", updated as people join and leave. `/mirror` shows the same list in
+  the moderator's terminal. Presence comes from open page connections:
+  the relay tells the moderator when a joined browser connects or
+  disconnects.
 
 ## Handoff (Alice to Bob)
 

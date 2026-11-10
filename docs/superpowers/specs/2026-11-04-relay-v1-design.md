@@ -210,7 +210,13 @@ current session.
 
 - One container image for the relay. It can run on OpenShift
   (Deployment, Service, Route) or with podman on a Beaker host.
-- Where to host it is still open (roadmap Phase 0).
+- **Test target:** the OpenShift cluster at
+  `api.qmifa-gcn2z-goc.mdjp.p3.openshiftapps.com` (approved for testing).
+  Its routes are on `openshiftapps.com` and are normally reachable from
+  the internet, so the page is public and protected only by the room key.
+  Acceptable for testing; revisit before relying on it for real meetings.
+- Sharing from the laptop (local mode) remains for solo testing only; the
+  team uses the relay.
 
 ## Later (not in v1)
 

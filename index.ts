@@ -3,9 +3,13 @@ import { uuidv7 } from "@earendil-works/pi-ai";
 import { networkInterfaces } from "node:os";
 import { MirrorState, type Poll } from "./state.js";
 import { Hub } from "./hub.js";
-import { LocalServer } from "./transport.js";
+import { LocalServer, type Transport } from "./transport.js";
+import { RelayClient, RoomBusyError } from "./relay-client.js";
+import { STORED_ROOM_TYPE, findStoredRoom, type Room } from "./rooms.js";
+import { decideShare } from "./index-share.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
+import { membersText } from "./page.js";
 
 /** Human-readable poll result, used for the terminal notify and the
  * injected session message. */
@@ -33,10 +37,28 @@ export function formatPollResult(
 	return lines.join("\n");
 }
 
+/** The spec's confirmation prompt, verbatim structure. */
+function confirmPrompt(roomName: string): string {
+	return `Room "${roomName}" has not been shared from this pi session before.
+
+If your team has used this room already, continue from that conversation instead:
+
+  - Your own earlier session: quit, then reopen it with  pi --resume
+  - A teammate's session: ask them for the session file, then open it with
+      pi --session <file>.jsonl
+    Session files are in ~/.pi/agent/sessions/<project-folder>/
+    If you have an /export HTML file: open it in a browser, click "↓ JSONL"
+    at the top right, then use  pi --session <downloaded>.jsonl
+  - You only have the room link: run  /mirror share <link>
+    (keeps the team's link, but shows this session's conversation)
+
+Start "${roomName}" as a new room? Any existing link for this room will stop working.`;
+}
+
 export default function meetingMirror(pi: ExtensionAPI): void {
 	let state: MirrorState | null = null;
 	let hub: Hub | null = null;
-	let server: LocalServer | null = null;
+	let server: Transport | null = null;
 
 	const ensureState = (): MirrorState => {
 		if (!state) throw new Error("Meeting Mirror is not active in this session.");
@@ -47,6 +69,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	// entries we have not yet seen. Tracks entry ids, so a rewound or forked
 	// branch never duplicates or silently stops updating.
 	const seenEntries = new Set<string>();
+	const storedRoom = (ctx: { sessionManager: { getBranch: () => BranchEntry[] } }, name?: string): Room | null =>
+		findStoredRoom(ctx.sessionManager.getBranch() as never, name);
 	const resync = (ctx: { sessionManager: { getBranch: () => BranchEntry[] } }): void => {
 		if (!state) return;
 		resyncFromBranch(
@@ -106,21 +130,75 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		resync(ctx);
 	});
 
-	const startSharing = async (ctx: { ui: { notify: (msg: string, level: "info" | "warning") => void } }): Promise<void> => {
+	const startSharing = async (args: string, ctx: {
+		ui: { notify: (msg: string, level: "info" | "warning") => void; select: (title: string, options: string[]) => Promise<string | undefined> };
+		sessionManager: { getBranch: () => BranchEntry[] };
+	}): Promise<void> => {
 		if (server) {
 			ctx.ui.notify("Meeting Mirror is already shared.", "info");
 			return;
 		}
 		ensureState();
-		server = new LocalServer(hub!, { port: configuredPort, host: configuredHost });
+		const stored = storedRoom(ctx);
+		const decision = decideShare(args, stored, (name) => storedRoom(ctx, name), process.env.MEETING_MIRROR_RELAY);
+
+		if (decision.mode === "error") {
+			ctx.ui.notify(decision.message, "warning");
+			return;
+		}
+
+		if (decision.mode === "local") {
+			server = new LocalServer(hub!, { port: configuredPort, host: configuredHost });
+			try {
+				await server.start();
+				const local = server as LocalServer;
+				const port = local.url.split(":").pop();
+				const urls = allAddresses().map((a) => `http://${a}:${port}/?key=${local.key}`);
+				ctx.ui.notify(`Meeting Mirror page: ${local.pageUrl}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
+			} catch (err) {
+				server = null;
+				ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
+			}
+			return;
+		}
+
+		// relay mode
+		let room = decision.room;
+		if (decision.needsConfirm) {
+			const answer = await ctx.ui.select(
+				confirmPrompt(room.name),
+				["No", "Yes, start a new room"],
+			);
+			if (answer !== "Yes, start a new room") return;
+		}
+		if (decision.isNew && stored?.name === room.name) {
+			// replacing a stored room's key deliberately: record the new one below
+		}
+		const client = new RelayClient(hub!, room, {
+			onLost: (reason) => {
+				server = null;
+				ctx.ui.notify(
+					reason === "replaced"
+						? `Meeting Mirror: another moderator took over room ${room.name}.`
+						: `Meeting Mirror: lost room ${room.name}.`,
+					"warning",
+				);
+			},
+		});
 		try {
-			await server.start();
-			const port = server.url.split(":").pop();
-			const urls = allAddresses().map((a) => `http://${a}:${port}/?key=${server!.key}`);
-			ctx.ui.notify(`Meeting Mirror page: ${server.pageUrl}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
+			await client.start();
 		} catch (err) {
-			server = null;
-			ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
+			if (err instanceof RoomBusyError) {
+				ctx.ui.notify(`Room ${room.name} is busy: another moderator is sharing it.`, "warning");
+				return;
+			}
+			ctx.ui.notify(`Meeting Mirror failed to reach the relay: ${err instanceof Error ? err.message : err}`, "warning");
+			return;
+		}
+		server = client;
+		ctx.ui.notify(`Meeting Mirror room: ${client.pageUrl}`, "info");
+		if (decision.isNew) {
+			pi.appendEntry(STORED_ROOM_TYPE, room);
 		}
 	};
 
@@ -135,19 +213,20 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	};
 
 	pi.registerCommand("mirror", {
-		description: "Share status, or /mirror share | /mirror unshare",
+		description: "Share status, or /mirror share [name|link] | /mirror unshare",
 		handler: async (args, ctx) => {
 			const action = args.trim();
-			if (action === "share") {
-				await startSharing(ctx);
-				return;
-			}
 			if (action === "unshare") {
 				await stopSharing(ctx);
 				return;
 			}
+			if (action.startsWith("share")) {
+				const shareArgs = action.slice(5).trim();
+				await startSharing(shareArgs, ctx);
+				return;
+			}
 			if (action !== "") {
-				ctx.ui.notify("Usage: /mirror [share|unshare]", "warning");
+				ctx.ui.notify("Usage: /mirror [share [name|link] | unshare]", "warning");
 				return;
 			}
 			if (!server) {
@@ -157,11 +236,12 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 			const snapshot = ensureState().getSnapshot();
 			const votes =
 				snapshot.poll === null
-				? "no poll open"
-				: snapshot.revealed
-					? `poll revealed: ${snapshot.poll.question} (${snapshot.voteCount} votes)`
-					: `poll open: ${snapshot.poll.question} (${snapshot.voteCount} votes in, hidden)`;
-			ctx.ui.notify(`${server.pageUrl} — ${votes}`, "info");
+					? "no poll open"
+					: snapshot.revealed
+						? `poll revealed: ${snapshot.poll.question} (${snapshot.voteCount} votes)`
+						: `poll open: ${snapshot.poll.question} (${snapshot.voteCount} votes in, hidden)`;
+			const members = membersText(hub!.memberList());
+			ctx.ui.notify(`${server.pageUrl} — ${votes}${members ? `\n${members}` : ""}`, "info");
 		},
 	});
 

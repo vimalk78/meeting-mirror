@@ -7,11 +7,9 @@ Extends: `2026-11-04-remote-access-roadmap.md` (Phase 2) and
 
 ## Why
 
-The whole team is remote. Teammates cannot reach the moderator's laptop:
-the CSB firewall allows only SSH on VPN and NetBird interfaces, and opening
-a port needs IT approval. A relay on an internal host (an OpenShift
-cluster or a Beaker loan) solves this. The moderator's pi session makes an
-outbound connection to the relay, and teammates open the page on the relay.
+The team is remote and cannot reach the moderator's laptop. The
+moderator's pi session connects out to a relay on a shared host, and
+teammates open the page there.
 
 ## Goals
 

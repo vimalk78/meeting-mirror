@@ -32,9 +32,17 @@ outbound connection to the relay, and teammates open the page on the relay.
 
 ## Modes
 
-- `MEETING_MIRROR_RELAY` unset: the current `LocalServer` mode, unchanged.
+- `MEETING_MIRROR_RELAY` unset: local mode. The page is served from the
+  moderator's laptop, as today. Kept for solo testing.
 - `MEETING_MIRROR_RELAY=https://<relay-host>` set: relay mode, described
-  here.
+  here. This is how the team shares.
+
+`MEETING_MIRROR_RELAY` is an environment variable, so it must be set
+before pi starts, for example `export MEETING_MIRROR_RELAY=…` in
+`~/.bashrc`. It is needed only to start a brand-new room. A full room link
+contains the relay address, and a stored room remembers its relay, so
+taking over a room or resuming a session works without it. `install.sh`
+may offer to add the export line.
 
 ## Rooms
 
@@ -67,6 +75,30 @@ and reuses the same link.
 | `/mirror share <full link>` | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
 | `/mirror unshare` | Disconnect from the relay. The room is freed at once. |
 | `/mirror` | Show sharing status, the link, and poll status. |
+
+## Commands (local mode, for comparison)
+
+| Command | Effect |
+|---|---|
+| `/mirror share` | Start a server on the laptop with a new random key, and print its links. |
+| `/mirror share ols-4596` | Not supported: shows "Room names need relay mode (set MEETING_MIRROR_RELAY)." |
+| `/mirror share <full link>` | Not supported: shows the same message. |
+| `/mirror unshare` | Stop the server. Open pages disconnect. |
+| `/mirror` | Show sharing status, the link, and poll status. |
+
+Differences from relay mode:
+
+| | Local mode | Relay mode |
+|---|---|---|
+| Who can open the page | Only people who can reach the laptop's port | Anyone with the link |
+| Room names | None | Chosen by the moderator, or random |
+| Link across shares | New link every share | Same link while the session keeps the room |
+| Handoff to another moderator | Not possible: the link points at Alice's laptop | Take over with the session file or the link |
+| Stored in the pi session | Nothing | Room name, key, and relay address |
+| Ending the share | Server stops | Room is freed on the relay |
+
+Polls, voting, the member list, and the page itself behave the same in
+both modes.
 
 ### Confirmation prompt
 
@@ -154,6 +186,12 @@ A third identifier, separate from the room name and key.
   the moderator's terminal. Presence comes from open page connections:
   the relay tells the moderator when a joined browser connects or
   disconnects.
+- **Who has voted.** While a poll is open, the member list shows a tick
+  next to each person who has voted: "In the room: Alice ✓, Bob, John ✓
+  (2 of 3 voted)". Only the fact of voting is shown, never the choice,
+  until `/reveal`. Changing a vote does not change the tick. The
+  extension's vote update carries the voters' names instead of only a
+  count. `/mirror` shows the same in the moderator's terminal.
 
 ## Handoff (Alice to Bob)
 
@@ -210,16 +248,18 @@ current session.
 
 - One container image for the relay. It can run on OpenShift
   (Deployment, Service, Route) or with podman on a Beaker host.
-- **Test target:** the OpenShift cluster at
-  `api.qmifa-gcn2z-goc.mdjp.p3.openshiftapps.com` (approved for testing).
-  Its routes are on `openshiftapps.com` and are normally reachable from
-  the internet, so the page is public and protected only by the room key.
-  Acceptable for testing; revisit before relying on it for real meetings.
+- **Test target:** an OpenShift cluster approved for testing. If its
+  routes are reachable from the internet, the page is public and
+  protected only by the room key. Acceptable for testing; revisit before
+  relying on it for real meetings.
 - Sharing from the laptop (local mode) remains for solo testing only; the
   team uses the relay.
 
 ## Later (not in v1)
 
+- Show the brainstorming skill's visual companion (mockups, diagrams,
+  option cards) on the same page, so remote teammates see what the
+  moderator sees in the browser companion, not just the text.
 - Look through the moderator's own saved sessions for one that already
   used the room name, and name it in the confirmation prompt (helps a
   moderator who started a fresh session by mistake).

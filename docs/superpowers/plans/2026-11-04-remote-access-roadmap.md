@@ -59,6 +59,9 @@ See `docs/superpowers/specs/2026-11-04-relay-v1-design.md`. Summary:
 
 ## Later (deferred, not in v1)
 
+- Show the brainstorming visual companion (mockups, diagrams, option
+  cards) on the mirror page for remote teammates.
+
 - Scan the moderator's own saved sessions for one that already used a
   room name, and mention it in the confirmation prompt.
 - `/mirror rotate-key` for a room key that travelled too far.

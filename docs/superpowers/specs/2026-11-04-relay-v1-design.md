@@ -66,27 +66,17 @@ file but is not sent to the model. On a later `/mirror share` from the
 same session, or from a copy of it, the extension finds the stored room
 and reuses the same link.
 
-## Commands (relay mode)
+## Commands
 
-| Command | Effect |
-|---|---|
-| `/mirror share` | Reuse the room stored in this session. If none, create a room with a random name. |
-| `/mirror share ols-4596` | Reuse the stored key for `ols-4596` if this session has one. If not, show the confirmation prompt below, then create the room. |
-| `/mirror share <full link>` | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
-| `/mirror unshare` | Disconnect from the relay. The room is freed at once. |
-| `/mirror` | Show sharing status, the link, and poll status. |
+| Command | Local mode | Relay mode |
+|---|---|---|
+| `/mirror share` | Start a server on the laptop with a new random key, and print its links. | Reuse the room stored in this session. If none, create a room with a random name. |
+| `/mirror share ols-4596` | Not supported: shows "Room names need relay mode (set MEETING_MIRROR_RELAY)." | Reuse the stored key for `ols-4596` if this session has one. If not, show the confirmation prompt below, then create the room. |
+| `/mirror share <full link>` | Not supported: shows the same message. | Use the name and key from the link, store them in this session, and share. Used for a handoff. |
+| `/mirror unshare` | Stop the server. Open pages disconnect. | Disconnect from the relay. The room is freed at once. |
+| `/mirror` | Show sharing status, the link, and poll status. | Same. |
 
-## Commands (local mode, for comparison)
-
-| Command | Effect |
-|---|---|
-| `/mirror share` | Start a server on the laptop with a new random key, and print its links. |
-| `/mirror share ols-4596` | Not supported: shows "Room names need relay mode (set MEETING_MIRROR_RELAY)." |
-| `/mirror share <full link>` | Not supported: shows the same message. |
-| `/mirror unshare` | Stop the server. Open pages disconnect. |
-| `/mirror` | Show sharing status, the link, and poll status. |
-
-Differences from relay mode:
+Other differences:
 
 | | Local mode | Relay mode |
 |---|---|---|

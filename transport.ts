@@ -116,13 +116,19 @@ export class LocalServer implements Transport {
 	 * parameter (first page load, API calls) or as the mm_key cookie set on
 	 * that first load (assets, reloads, same-origin fetches).
 	 */
+	/** Cookie name is scoped per session: browser cookie jars ignore ports,
+	 * so two same-host sessions must not share one cookie name. */
+	private get cookieName(): string {
+		return `mm_key_${this.sessionId.slice(0, 8)}`;
+	}
+
 	private isAuthorized(req: IncomingMessage, url: URL): boolean {
 		if (url.searchParams.get("key") === this.key) return true;
 		const cookie = req.headers.cookie ?? "";
 		return cookie
 			.split(";")
 			.map((part) => part.trim())
-			.some((part) => part === `mm_key=${this.key}`);
+			.some((part) => part === `${this.cookieName}=${this.key}`);
 	}
 
 	private serveFile(res: ServerResponse, name: string): void {
@@ -134,7 +140,7 @@ export class LocalServer implements Transport {
 				"cache-control": "no-cache",
 			};
 			if (name === "page.html") {
-				headers["set-cookie"] = `mm_key=${this.key}; Path=/; HttpOnly; SameSite=Strict`;
+				headers["set-cookie"] = `${this.cookieName}=${this.key}; Path=/; HttpOnly; SameSite=Strict`;
 			}
 			res.writeHead(200, headers);
 			res.end(content);

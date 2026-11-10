@@ -343,6 +343,47 @@ describe("LocalServer", () => {
 		await events.body?.cancel();
 	});
 
+	it("two servers on different ports keep independent cookies in one browser", async () => {
+		const stateA = new MirrorState();
+		const serverA = new LocalServer(stateA, { port: 0 });
+		await serverA.start();
+		const stateB = new MirrorState();
+		const serverB = new LocalServer(stateB, { port: 0 });
+		await serverB.start();
+		try {
+			// load A's page with its key → A's cookie
+			const resA = await fetch(`${serverA.url}/?key=${serverA.key}`);
+			expect(resA.status).toBe(200);
+			const cookieA = (resA.headers.get("set-cookie") ?? "").split(";")[0]!;
+			// load B's page with its key → B's cookie, different name
+			const resB = await fetch(`${serverB.url}/?key=${serverB.key}`);
+			expect(resB.status).toBe(200);
+			const cookieB = (resB.headers.get("set-cookie") ?? "").split(";")[0]!;
+			expect(cookieA).not.toBe(cookieB);
+			// cookie NAMES must differ per session: a browser cookie jar is
+			// scoped by hostname (port ignored), so a shared name would let
+			// loading B's page overwrite A's cookie and kill A's open tab.
+			expect(cookieA.split("=")[0]).not.toBe(cookieB.split("=")[0]);
+			// A's cookie must not authorize B and vice versa
+			expect(
+				(await fetch(`${serverB.url}/events`, { headers: { cookie: cookieA } })).status,
+			).toBe(403);
+			expect(
+				(await fetch(`${serverA.url}/events`, { headers: { cookie: cookieB } })).status,
+			).toBe(403);
+			// each cookie authorizes its own server
+			expect(
+				(await fetch(`${serverA.url}/events`, { headers: { cookie: cookieA } })).status,
+			).toBe(200);
+			expect(
+				(await fetch(`${serverB.url}/events`, { headers: { cookie: cookieB } })).status,
+			).toBe(200);
+		} finally {
+			await serverA.stop();
+			await serverB.stop();
+		}
+	});
+
 	it("stop() closes the server", async () => {
 		const { base, key } = await start();
 		const s = server!;

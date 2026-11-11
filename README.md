@@ -171,6 +171,9 @@ oc rollout status deploy/relay
 oc get route relay   # the relay host for MEETING_MIRROR_RELAY
 ```
 
+Use the route host without a port number. An edge-terminated route
+serves HTTPS on port 443, not on the service port 8080.
+
 The relay keeps no state. It must run as exactly **one replica**. The
 deployment uses the `Recreate` strategy, so a new image replaces the pod
 instead of running two pods at the same time.

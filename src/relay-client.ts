@@ -63,8 +63,9 @@ export class RelayClient {
 		const ws = this.ws;
 		this.ws = null;
 		if (ws) {
-			// do not let the close handler treat a deliberate stop as a drop
-			ws.removeAllListeners("close");
+			// keep the handlers attached: the close/error handlers check
+			// this.stopped and no-op, but a listenerless ws turns a late
+			// socket error into an uncaught exception that kills pi
 			ws.close();
 		}
 	}
@@ -80,13 +81,22 @@ export class RelayClient {
 			const ws = new WebSocket(`${origin}/presenter`);
 			this.ws = ws;
 
+			// guards the whole attempt: exactly one of fail/replaced settles it,
+			// late socket events (e.g. a connect timeout firing after we gave
+			// up and moved on) must be ignored, not acted on or thrown
+			let settled = false;
+
 			const welcomeTimer = setTimeout(() => {
 				fail(new Error(`relay did not send a welcome in time: ${this.room.relay}`));
 			}, this.opts.welcomeTimeoutMs ?? 10000);
 
 			const fail = (err: unknown): void => {
+				if (settled) return;
+				settled = true;
 				clearTimeout(welcomeTimer);
-				ws.removeAllListeners();
+				// keep the real cause: a generic "connection error" hides
+				// ETIMEDOUT and friends, which is what the moderator needs to see
+				this.lastConnectError = err instanceof Error ? err.message : String(err);
 				if (this.stopped) {
 					resolve();
 					return;
@@ -111,7 +121,12 @@ export class RelayClient {
 					return;
 				}
 				if (!this.everWelcomed && (this.connectCount ?? 0) >= (this.opts.maxConnectAttempts ?? 5)) {
-					reject(new Error(`relay unreachable after ${this.connectCount} attempts: ${this.room.relay}`));
+					reject(
+						new Error(
+							`relay unreachable after ${this.connectCount} attempts: ${this.room.relay}` +
+								(this.lastConnectError ? ` (${this.lastConnectError})` : ""),
+						),
+					);
 					return;
 				}
 				this.scheduleReconnect(resolve, reject);
@@ -144,6 +159,7 @@ export class RelayClient {
 						break;
 					}
 					case "replaced": {
+						settled = true;
 						this.stopped = true; // do not reconnect
 						// close the hub's browser connections too, or the members they
 						// registered stay "present" as ghosts in a later share
@@ -180,9 +196,11 @@ export class RelayClient {
 				}
 			});
 
-			ws.on("error", () => {
-				// surface as a failed connect; fail() decides retry vs reject
-				fail(new Error("connection error"));
+			ws.on("error", (err: Error) => {
+				// surface as a failed connect; fail() decides retry vs reject.
+				// This listener stays attached for the life of the socket: a
+				// late error must never become an uncaught exception.
+				fail(err);
 			});
 
 			ws.on("close", () => {
@@ -218,6 +236,8 @@ export class RelayClient {
 	private reconnectAttempt: number | undefined;
 	private connectCount: number | undefined;
 	private everWelcomed = false;
+	/** Message of the most recent connect failure, for error reporting. */
+	private lastConnectError: string | undefined;
 
 	private teardownHub(): void {
 		this.hubUnsubscribe?.();

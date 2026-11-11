@@ -282,3 +282,41 @@ describe("code review fixes", () => {
 		wss.close();
 	});
 });
+
+describe("late socket errors must not crash pi (user report: ETIMEDOUT uncaughtException)", () => {
+	it("an error arriving after start() gave up is ignored, not thrown", async () => {
+		// port 1 on localhost: refuses connections at once
+		const { hub } = setup("http://127.0.0.1:1");
+		client = new RelayClient(hub, { relay: "http://127.0.0.1:1", name: "ols-test", key: "k1" }, {
+			backoffMs: [1],
+			maxConnectAttempts: 2,
+			welcomeTimeoutMs: 100,
+		});
+		await expect(client.start()).rejects.toThrow(/relay unreachable/);
+
+		// the socket of the last attempt can still emit errors late (e.g. a
+		// connect timeout): with no listener attached this throws synchronously
+		const ws = (client as unknown as { ws: WebSocket }).ws;
+		expect(ws).toBeTruthy();
+		ws!.emit("error", new Error("connect ETIMEDOUT 10.0.0.1:8080"));
+		await new Promise((r) => setTimeout(r, 50));
+	});
+
+	it("stop() during a connect attempt keeps the error listener: no uncaught exception", async () => {
+		const { WebSocketServer } = await import("ws");
+		const wss = new WebSocketServer({ port: 0 }); // accepts, never welcomes
+		const port = (wss.address() as { port: number }).port;
+		const { hub } = setup(`http://127.0.0.1:${port}`);
+		client = new RelayClient(hub, { relay: `http://127.0.0.1:${port}`, name: "ols-test", key: "k1" }, {
+			welcomeTimeoutMs: 10_000,
+		});
+		const started = client.start();
+		await new Promise((r) => setTimeout(r, 100)); // connect established
+		const ws = (client as unknown as { ws: WebSocket }).ws!;
+		await client.stop();
+		ws.emit("error", new Error("connect ETIMEDOUT 10.0.0.1:8080"));
+		await started; // stop() resolves the pending start()
+		await new Promise((r) => setTimeout(r, 50));
+		wss.close();
+	});
+});

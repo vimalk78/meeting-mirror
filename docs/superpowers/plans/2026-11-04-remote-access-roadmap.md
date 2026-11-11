@@ -61,6 +61,11 @@ See `docs/superpowers/specs/2026-11-04-relay-v1-design.md`. Summary:
 
 - Show the brainstorming visual companion (mockups, diagrams, option
   cards) on the mirror page for remote teammates.
+- Page color scheme: night, day, and follow-system modes with a toggle
+  in the page. Today the page is light only; long meetings on a dark
+  screen are hard on the eyes. CSS variables are already in place
+  (`:root` in `page.css`), so the work is mostly a dark palette plus
+  a small setting persisted in localStorage.
 
 - Scan the moderator's own saved sessions for one that already used a
   room name, and mention it in the confirmation prompt.

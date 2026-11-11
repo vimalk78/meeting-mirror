@@ -1,19 +1,45 @@
 #!/usr/bin/env bash
-# Install meeting-mirror as a pi extension (symlink into the user extensions dir).
+# Install meeting-mirror as a pi and/or oh-my-pi (omp) extension: symlink
+# the repository into each agent's extensions directory.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_DIR="${HOME}/.pi/agent/extensions/meeting-mirror"
+PI_EXT_DIR="${HOME}/.pi/agent/extensions"
+OMP_EXT_DIR="${HOME}/.omp/agent/extensions"
 
-mkdir -p "${HOME}/.pi/agent/extensions"
-
-if [ -e "${TARGET_DIR}" ] && [ ! -L "${TARGET_DIR}" ]; then
-	echo "Refusing to overwrite existing ${TARGET_DIR} (not a symlink). Remove it first." >&2
-	exit 1
+want_pi=0
+want_omp=0
+if [ $# -eq 0 ]; then
+	# default: pi always, omp when its config directory exists
+	want_pi=1
+	if [ -d "${HOME}/.omp" ]; then want_omp=1; fi
+else
+	for arg in "$@"; do
+		case "${arg}" in
+			pi) want_pi=1 ;;
+			omp) want_omp=1 ;;
+			*)
+				echo "Usage: install.sh [pi] [omp]" >&2
+				exit 1
+				;;
+		esac
+	done
 fi
 
-ln -sfn "${REPO_DIR}" "${TARGET_DIR}"
-echo "Installed: ${TARGET_DIR} -> ${REPO_DIR}"
+install_one() {
+	local ext_dir="$1"
+	local target="${ext_dir}/meeting-mirror"
+	mkdir -p "${ext_dir}"
+	if [ -e "${target}" ] && [ ! -L "${target}" ]; then
+		echo "Refusing to overwrite existing ${target} (not a symlink). Remove it first." >&2
+		return 1
+	fi
+	ln -sfn "${REPO_DIR}" "${target}"
+	echo "Installed: ${target} -> ${REPO_DIR}"
+}
+
+if [ "${want_pi}" -eq 1 ]; then install_one "${PI_EXT_DIR}"; fi
+if [ "${want_omp}" -eq 1 ]; then install_one "${OMP_EXT_DIR}"; fi
 
 if [ -n "${MEETING_MIRROR_RELAY:-}" ]; then
 	echo "MEETING_MIRROR_RELAY is already set: ${MEETING_MIRROR_RELAY}"
@@ -29,4 +55,4 @@ else
 		fi
 	fi
 fi
-echo "Start (or restart) pi; a session will print the Meeting Mirror page URL."
+echo "Start (or restart) your agent; a new session is private until you run /mirror share."

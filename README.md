@@ -59,7 +59,10 @@ Because the moderator holds all the state:
    ```
 
    `install.sh` symlinks the repository into
-   `~/.pi/agent/extensions/meeting-mirror/`. Run `npm install` again after
+   `~/.pi/agent/extensions/meeting-mirror/`. If you also use oh-my-pi
+   (omp), it links into `~/.omp/agent/extensions/meeting-mirror/` when
+   that directory exists. To install for one agent only, run
+   `bash install.sh pi` or `bash install.sh omp`. Run `npm install` again after
    you pull changes to `package.json`.
 
 2. Set the relay address before you start pi, for example in `~/.bashrc`.

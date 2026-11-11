@@ -94,6 +94,11 @@ export class RelayClient {
 				if (settled) return;
 				settled = true;
 				clearTimeout(welcomeTimer);
+				// Kill this attempt's socket: a timed-out connect can otherwise
+				// complete later, get welcomed, and then be replaced by our own
+				// retry (seen as "another moderator took over"). Listeners stay
+				// attached so its late events are handled - and ignored below.
+				if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) ws.terminate();
 				// keep the real cause: a generic "connection error" hides
 				// ETIMEDOUT and friends, which is what the moderator needs to see
 				this.lastConnectError = err instanceof Error ? err.message : String(err);
@@ -137,6 +142,8 @@ export class RelayClient {
 			});
 
 			ws.on("message", (data) => {
+				// a socket from an earlier, abandoned attempt must not act
+				if (settled || this.ws !== ws) return;
 				let msg: any;
 				try {
 					msg = JSON.parse(String(data));
@@ -204,7 +211,9 @@ export class RelayClient {
 			});
 
 			ws.on("close", () => {
-				if (this.stopped) {
+				if (this.stopped || this.ws !== ws) {
+					// stopped, or a stale socket closing after a newer attempt
+					// took over: it must not tear down the current connection
 					clearTimeout(welcomeTimer);
 					return;
 				}

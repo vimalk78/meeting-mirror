@@ -320,3 +320,34 @@ describe("late socket errors must not crash pi (user report: ETIMEDOUT uncaughtE
 		wss.close();
 	});
 });
+
+describe("slow upgrade during relay rollout (user report: 'another moderator took over' with no other moderator)", () => {
+	it("an attempt that timed out waiting for welcome does not later attach and get replaced by our own retry", async () => {
+		const base = await startRelay();
+		// Delay the FIRST WebSocket upgrade past the welcome timeout, like the
+		// OpenShift router holding the upgrade while no relay pod is ready.
+		const server = relayHandle!.server;
+		const upgradeListeners = server.listeners("upgrade") as Array<(...args: unknown[]) => void>;
+		server.removeAllListeners("upgrade");
+		let upgrades = 0;
+		server.on("upgrade", (...args: unknown[]) => {
+			upgrades++;
+			const delay = upgrades === 1 ? 300 : 0;
+			setTimeout(() => {
+				for (const listener of upgradeListeners) listener(...args);
+			}, delay);
+		});
+
+		const { hub } = setup(base);
+		const lost: string[] = [];
+		client = new RelayClient(hub, room(base), {
+			welcomeTimeoutMs: 100,
+			backoffMs: [500],
+			onLost: (reason) => lost.push(reason),
+		});
+		await client.start();
+		// let the delayed first socket open and the scheduled retry run
+		await new Promise((r) => setTimeout(r, 1200));
+		expect(lost).toEqual([]);
+	});
+});

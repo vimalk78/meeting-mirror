@@ -155,7 +155,7 @@ describe("RelayClient", () => {
 	it("relay restart: client reconnects, browsers get the same sessionId", async () => {
 		const base = await startRelay();
 		const { hub } = setup(base);
-		client = new RelayClient(hub, room(base), { backoffMs: [20] });
+		client = new RelayClient(hub, room(base), { backoffMs: [20], reconnectBackoffMs: [20] });
 		await client.start();
 		const browser = browserSse(base, "k1", "c1");
 		await browser.ready;
@@ -221,7 +221,7 @@ describe("busy during reconnect (review fix 4)", () => {
 		const base = `http://127.0.0.1:${port}`;
 		const hub1 = new Hub(new MirrorState());
 		const lost: string[] = [];
-		const client = new RelayClient(hub1, { relay: base, name: "ols-x", key: "k1" }, { backoffMs: [30], onLost: (reason) => lost.push(reason) });
+		const client = new RelayClient(hub1, { relay: base, name: "ols-x", key: "k1" }, { backoffMs: [30], reconnectBackoffMs: [30], onLost: (reason) => lost.push(reason) });
 		await client.start();
 		// relay drops the presenter; another moderator takes the room before we reconnect
 		await relay.close();
@@ -349,5 +349,39 @@ describe("slow upgrade during relay rollout (user report: 'another moderator too
 		// let the delayed first socket open and the scheduled retry run
 		await new Promise((r) => setTimeout(r, 1200));
 		expect(lost).toEqual([]);
+	});
+});
+
+describe("faster reconnect after a lost connection (user report: page waited ~98 s after a rollout)", () => {
+	it("once welcomed, reconnects use reconnectBackoffMs, not the slower initial backoff", async () => {
+		const base = await startRelay();
+		const { hub } = setup(base);
+		client = new RelayClient(hub, room(base), {
+			backoffMs: [5000], // initial-connect schedule: far too slow for this test
+			reconnectBackoffMs: [50],
+		});
+		await client.start();
+
+		// relay goes away and comes back on the same port
+		const port = Number(new URL(base).port);
+		await relayHandle!.close();
+		relayHandle = null;
+		await new Promise((r) => setTimeout(r, 200)); // a few failed reconnect attempts
+		await startRelay(port);
+
+		// with reconnectBackoffMs the moderator is back within a few hundred ms
+		const deadline = Date.now() + 1500;
+		let attached = false;
+		while (Date.now() < deadline && !attached) {
+			const res = await fetch(`${base}/s/ols-test/events?key=k1&client=c1`, { signal: AbortSignal.timeout(500) }).catch(() => null);
+			if (res) {
+				const reader = res.body!.getReader();
+				const { value } = await reader.read();
+				await reader.cancel();
+				attached = new TextDecoder().decode(value ?? new Uint8Array()).includes('"snapshot"');
+			}
+			if (!attached) await new Promise((r) => setTimeout(r, 50));
+		}
+		expect(attached).toBe(true);
 	});
 });

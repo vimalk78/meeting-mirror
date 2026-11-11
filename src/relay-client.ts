@@ -26,7 +26,12 @@ export class RelayClient {
 		private room: Room,
 		private opts: {
 			onLost?: (reason: "replaced" | "busy") => void;
+			/** Delays between initial connect attempts (before the first welcome). */
 			backoffMs?: number[];
+			/** Delays between reconnect attempts after a lost connection. Shorter
+			 * than backoffMs: the room was working, so the usual cause is a relay
+			 * restart, and every second of delay leaves participants waiting. */
+			reconnectBackoffMs?: number[];
 			/** Failed initial connects before start() gives up and rejects. */
 			maxConnectAttempts?: number;
 			/** How long to wait for the relay's welcome before treating the connect as failed. */
@@ -231,7 +236,9 @@ export class RelayClient {
 	}
 
 	private scheduleReconnect(resolve?: () => void, reject?: (err: unknown) => void): void {
-		const backoff = this.opts.backoffMs ?? [1000, 2000, 5000, 10000, 30000];
+		const backoff = this.everWelcomed
+			? (this.opts.reconnectBackoffMs ?? [1000, 2000, 3000, 5000])
+			: (this.opts.backoffMs ?? [1000, 2000, 5000, 10000, 30000]);
 		const delay = backoff[Math.min(this.reconnectAttempt ?? 0, backoff.length - 1)] ?? backoff[backoff.length - 1];
 		this.reconnectAttempt = (this.reconnectAttempt ?? 0) + 1;
 		this.reconnectTimer = setTimeout(() => {

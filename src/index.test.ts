@@ -117,6 +117,18 @@ describe("renderMarkdown — full structures", () => {
 		expect(html).toContain("<li>first</li>");
 	});
 
+	it("ordered lists keep their starting number across sections (user report: numbering restarts)", () => {
+		const html = renderMarkdown("## A\n\n1. one\n2. two\n\n## B\n\n3. three\n4. four");
+		expect(html).toContain("<ol><li>one</li><li>two</li></ol>");
+		expect(html).toContain('<ol start="3"><li>three</li><li>four</li></ol>');
+	});
+
+	it("an item separated by a blank line keeps its number", () => {
+		const html = renderMarkdown("17. seventeen\n\n18. eighteen");
+		expect(html).toContain('<ol start="17"><li>seventeen</li></ol>');
+		expect(html).toContain('<ol start="18"><li>eighteen</li></ol>');
+	});
+
 	it("renders blockquotes", () => {
 		const html = renderMarkdown("> quoted text");
 		expect(html).toContain("<blockquote>");

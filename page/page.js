@@ -68,7 +68,12 @@ export function renderMarkdown(md) {
 				items.push(`<li>${renderInline(lines[i].replace(itemRe, ""))}</li>`);
 				i++;
 			}
-			out.push(`<${tag}>${items.join("")}</${tag}>`);
+			// An ordered list keeps the number of its first item (CommonMark):
+			// a list split by a heading or a blank line continues at 3, 17...
+			// instead of the browser restarting it at 1.
+			const start = ol ? Number.parseInt(line.trim(), 10) : 1;
+			const startAttr = start !== 1 ? ` start="${start}"` : "";
+			out.push(`<${tag}${startAttr}>${items.join("")}</${tag}>`);
 			continue;
 		}
 		if (line.trim() === "") {

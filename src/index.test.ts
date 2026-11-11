@@ -123,6 +123,32 @@ describe("renderMarkdown — full structures", () => {
 		expect(html).toContain("quoted text");
 	});
 
+	it("renders GFM tables with header and body cells", () => {
+		const html = renderMarkdown("| Col A | Col B |\n|---|---|\n| 1 | 2 |\n| three | four |");
+		expect(html).toContain("<table");
+		expect(html).toContain("<th>Col A</th>");
+		expect(html).toContain("<th>Col B</th>");
+		expect(html).toContain("<td>1</td>");
+		expect(html).toContain("<td>four</td>");
+	});
+
+	it("escapes HTML inside table cells", () => {
+		const html = renderMarkdown("| a | b |\n|---|---|\n| <script> | x |");
+		expect(html).toContain("&lt;script&gt;");
+		expect(html).not.toContain("<script>");
+	});
+
+	it("column alignment from the delimiter row", () => {
+		const html = renderMarkdown("| a | b |\n|:---|---:|\n| 1 | 2 |");
+		expect(html).toContain('<th style="text-align:left">a</th>');
+		expect(html).toContain('<th style="text-align:right">b</th>');
+	});
+
+	it("a paragraph line with a pipe is not eaten by the table parser when no delimiter follows", () => {
+		const html = renderMarkdown("see a | b in this sentence\n\nnext");
+		expect(html).toContain("<p>see a | b in this sentence</p>");
+	});
+
 	it("renders fenced code blocks with escaped content", () => {
 		const html = renderMarkdown("```\nlet x = '<b>';\n```");
 		expect(html).toContain("<pre><code>");

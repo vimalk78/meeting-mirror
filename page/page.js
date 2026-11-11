@@ -36,6 +36,12 @@ export function renderMarkdown(md) {
 			out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
 			continue;
 		}
+		if (line.includes("|") && i + 1 < lines.length && isDelimiterRow(lines[i + 1])) {
+			const [tableHtml, nextIndex] = renderTable(line, lines[i + 1], lines, i + 2);
+			out.push(tableHtml);
+			i = nextIndex;
+			continue;
+		}
 		const heading = line.match(/^(#{1,4})\s+(.*)$/);
 		if (heading) {
 			const level = heading[1].length;
@@ -75,6 +81,7 @@ export function renderMarkdown(md) {
 				i < lines.length &&
 				lines[i].trim() !== "" &&
 				!/^\s*```/.test(lines[i]) &&
+				!(lines[i].includes("|") && i + 1 < lines.length && isDelimiterRow(lines[i + 1])) &&
 				!/^#{1,4}\s/.test(lines[i]) &&
 				!/^\s*>/.test(lines[i]) &&
 				!/^\s*[-*]\s+/.test(lines[i]) &&
@@ -86,6 +93,51 @@ export function renderMarkdown(md) {
 		out.push(`<p>${renderInline(para.join(" "))}</p>`);
 	}
 	return out.join("");
+}
+
+/** True for a GFM table delimiter row: only |, :, -, spaces, with at
+ * least one dash and one pipe. */
+function isDelimiterRow(line) {
+	return /^[\s|:-]+$/.test(line) && line.includes("-") && line.includes("|");
+}
+
+/** Split a table row into trimmed cells, dropping the edge pipes. */
+function splitRow(line) {
+	return line
+		.trim()
+		.replace(/^\|/, "")
+		.replace(/\|$/, "")
+		.split("|")
+		.map((cell) => cell.trim());
+}
+
+function tableAlign(delimiter) {
+	const left = delimiter.startsWith(":");
+	const right = delimiter.endsWith(":");
+	if (left && right) return "center";
+	if (right) return "right";
+	if (left) return "left";
+	return "";
+}
+
+/** Render a GFM table: headerLine and delimiterLine are already split off,
+ * body rows start at lines[i]. Returns [html, nextIndex]. */
+function renderTable(headerLine, delimiterLine, lines, i) {
+	const header = splitRow(headerLine);
+	const aligns = splitRow(delimiterLine).map(tableAlign);
+	const cell = (text, tag, j) => {
+		const align = aligns[j] ? ` style="text-align:${aligns[j]}"` : "";
+		return `<${tag}${align}>${renderInline(text)}</${tag}>`;
+	};
+	const head = header.map((c, j) => cell(c, "th", j)).join("");
+	let index = i;
+	const rows = [];
+	while (index < lines.length && lines[index].includes("|") && lines[index].trim() !== "") {
+		rows.push(splitRow(lines[index]));
+		index++;
+	}
+	const body = rows.map((row) => `<tr>${header.map((_, j) => cell(row[j] ?? "", "td", j)).join("")}</tr>`).join("");
+	return [`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`, index];
 }
 
 /** Inline markdown on already-escaped-to-be text: escape first, then bold,

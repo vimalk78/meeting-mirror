@@ -25,10 +25,11 @@ export function createRelay(opts: {
 	const maxConnsPerRoom = opts.maxConnsPerRoom ?? 200;
 	const maxConnsTotal = opts.maxConnsTotal ?? 2000;
 
+	type ConnEntry = { res: ServerResponse; client: string; key: string; name?: string };
 	type Room = {
 		name: string;
 		presenter: { ws: WebSocket; key: string } | null;
-		conns: Map<string, { res: ServerResponse; client: string; key: string }>;
+		conns: Map<string, ConnEntry>;
 		pending: Map<number, ServerResponse>;
 		nextReq: number;
 	};
@@ -96,9 +97,16 @@ export function createRelay(opts: {
 		// first event before the response even starts
 		res.flushHeaders();
 		const conn = Math.random().toString(36).slice(2) + Date.now().toString(36);
+		const shortClient = (id: string): string => id.slice(0, 8);
 		const notifyClose = (): void => {
+			const entry = room.conns.get(conn);
 			room.conns.delete(conn);
-			log(`browser disconnected from ${room.name}`);
+			const who = entry
+				? entry.name
+					? ` (${entry.name}, client ${shortClient(entry.client)})`
+					: ` (client ${shortClient(entry.client)})`
+				: "";
+			log(`browser disconnected from ${room.name}${who}`);
 			// always tell the moderator when a browser goes away - the socket
 			// may have been adopted after being parked (presenter arrived later)
 			if (room.presenter) sendToModerator(room, { t: "close", conn });
@@ -107,7 +115,7 @@ export function createRelay(opts: {
 		if (!room.presenter || room.presenter.key !== key) {
 			if (!room.presenter) {
 				// parked: wait for a moderator, validate the key when one arrives
-				log(`browser parked on ${room.name}`);
+				log(`browser parked on ${room.name} (client ${shortClient(client)})`);
 				res.write(`data: ${JSON.stringify({ type: "waiting" })}\n\n`);
 				room.conns.set(conn, { res, client, key });
 				res.on("close", notifyClose);
@@ -120,14 +128,14 @@ export function createRelay(opts: {
 		room.conns.set(conn, { res, client, key });
 		sendToModerator(room, { t: "open", conn, client });
 		res.on("close", notifyClose);
-		log(`browser connected to ${room.name}`);
+		log(`browser connected to ${room.name} (client ${shortClient(client)})`);
 	};
 
 	// When a moderator attaches, parked browsers with the matching key get opened.
 	const adoptParked = (room: Room): void => {
 		for (const [conn, entry] of [...room.conns]) {
 			if (entry.key === room.presenter?.key) {
-				log(`browser adopted on ${room.name}`);
+				log(`browser adopted on ${room.name} (client ${entry.client.slice(0, 8)}${entry.name ? `, ${entry.name}` : ""})`);
 				sendToModerator(room, { t: "open", conn, client: entry.client });
 			} else {
 				entry.res.write(`data: ${JSON.stringify({ type: "invalid_key" })}\n\n`);
@@ -270,6 +278,24 @@ export function createRelay(opts: {
 				res.writeHead(400, { "content-type": "application/json" });
 				res.end(JSON.stringify({ error: "invalid JSON body" }));
 				return;
+			}
+			// Identify requests carry the participant's name: remember it per
+			// connection (only while it lives — the relay stays stateless) so
+			// later logs can show who did what. Votes are logged without the
+			// choice or the remark: both are secret until the moderator reveals.
+			if (kind === "identify") {
+				const { clientId, username } = (body ?? {}) as { clientId?: unknown; username?: unknown };
+				if (typeof clientId === "string" && typeof username === "string" && username.trim() !== "") {
+					const name = username.trim().slice(0, 40);
+					for (const entry of room.conns.values()) if (entry.client === clientId) entry.name = name;
+					log(`participant "${name}" joined ${room.name}`);
+				}
+			} else if (kind === "vote") {
+				const { clientId } = (body ?? {}) as { clientId?: unknown };
+				if (typeof clientId === "string") {
+					const name = [...room.conns.values()].find((e) => e.client === clientId)?.name;
+					log(`vote received on ${room.name}${name ? ` (${name})` : ""}`);
+				}
 			}
 			const reqId = room.nextReq++;
 			room.pending.set(reqId, res);

@@ -363,8 +363,8 @@ describe("adopted browser lifecycle (review fix 6)", () => {
 	});
 });
 
-describe("relay logging (user report: no logs)", () => {
-	it("logs moderator and browser lifecycle events", async () => {
+describe("relay logging (user report: no logs; then: who connected)", () => {
+	it("logs moderator and browser lifecycle events with names when known", async () => {
 		const logs: string[] = [];
 		const relay = createRelay({ pageDir: "page", pingMs: 1000, onLog: (m) => logs.push(m) });
 		await new Promise<void>((r) => relay.server.listen(0, "127.0.0.1", r));
@@ -374,15 +374,41 @@ describe("relay logging (user report: no logs)", () => {
 		ws.send(JSON.stringify({ t: "hello", room: "ols-log", key: "k" }));
 		await new Promise((r) => setTimeout(r, 50));
 		const ctl = new AbortController();
-		const res = await fetch(`http://127.0.0.1:${port}/s/ols-log/events?key=k&client=c1`, { signal: ctl.signal });
+		const res = await fetch(`http://127.0.0.1:${port}/s/ols-log/events?key=k&client=abcd1234efgh`, { signal: ctl.signal });
 		await new Promise((r) => setTimeout(r, 100)); // headers arrived = browser connected
+
+		const nextRequest = (): Promise<any> =>
+			new Promise((resolve) => ws.once("message", (data) => resolve(JSON.parse(String(data)))));
+		const pendingIdentify = nextRequest();
+		const identify = fetch(`http://127.0.0.1:${port}/s/ols-log/identify?key=k`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ clientId: "abcd1234efgh", username: "Alice" }),
+		});
+		const idMsg = await pendingIdentify;
+		ws.send(JSON.stringify({ t: "reply", req: idMsg.req, status: 200, body: null }));
+		await identify;
+		const pendingVote = nextRequest();
+		const vote = fetch(`http://127.0.0.1:${port}/s/ols-log/vote?key=k`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ clientId: "abcd1234efgh", choice: "A", remark: "secret remark" }),
+		});
+		const voteMsg = await pendingVote;
+		ws.send(JSON.stringify({ t: "reply", req: voteMsg.req, status: 200, body: null }));
+		await vote;
+		await new Promise((r) => setTimeout(r, 50));
+
 		ctl.abort();
 		res.body!.cancel().catch(() => {});
 		ws.close();
 		await new Promise((r) => setTimeout(r, 150));
 		expect(logs).toContain("moderator attached to ols-log");
-		expect(logs).toContain("browser connected to ols-log");
-		expect(logs).toContain("browser disconnected from ols-log");
+		expect(logs).toContain("browser connected to ols-log (client abcd1234)");
+		expect(logs).toContain('participant "Alice" joined ols-log');
+		expect(logs).toContain("vote received on ols-log (Alice)");
+		expect(logs.some((l) => l.includes("secret remark"))).toBe(false); // never log the choice or remark
+		expect(logs).toContain("browser disconnected from ols-log (Alice, client abcd1234)");
 		expect(logs).toContain("moderator detached from ols-log");
 		await relay.close();
 	});

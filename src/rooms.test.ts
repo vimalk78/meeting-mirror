@@ -76,4 +76,20 @@ describe("findStoredRoom", () => {
 		expect(findStoredRoom(branch as never, "ols-9")).toBeNull();
 		expect(findStoredRoom([] as never)).toBeNull();
 	});
+
+	it("a cleared marker forgets every earlier room", () => {
+		const cleared = [...branch, { type: "custom", customType: "meeting-mirror-room", data: { cleared: true } }];
+		expect(findStoredRoom(cleared as never)).toBeNull();
+		expect(findStoredRoom(cleared as never, "ols-1")).toBeNull();
+	});
+
+	it("a room stored after a cleared marker is found again", () => {
+		const later = [
+			...branch,
+			{ type: "custom", customType: "meeting-mirror-room", data: { cleared: true } },
+			{ type: "custom", customType: "meeting-mirror-room", data: { name: "ols-3", key: "k3", relay: "https://r3" } },
+		];
+		expect(findStoredRoom(later as never)).toEqual({ name: "ols-3", key: "k3", relay: "https://r3" });
+		expect(findStoredRoom(later as never, "ols-2")).toBeNull();
+	});
 });

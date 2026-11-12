@@ -87,6 +87,7 @@ Because the moderator holds all the state:
 | `/mirror share ols-4596` | Share the room `ols-4596`. If this session has no stored key for that name, a confirmation prompt (default No) asks before it starts a new room. |
 | `/mirror share <full link>` | Share with the name and key from the link, and store them in this session. Use this for a handoff. |
 | `/mirror unshare` | Disconnect from the relay. The room is freed at once. |
+| `/mirror forget` | Forget the room stored in this session. After that, `/mirror share` follows `MEETING_MIRROR_RELAY`; if it is not set, local mode. Run `/mirror unshare` first. |
 | `/mirror` | Show the sharing status, the link, the poll state, and who is in the room. |
 | `/poll` | Extract a poll from the last assistant message (LLM call + terminal confirmation). |
 | `/poll 2` | Same, from the 2nd-last assistant message. |
@@ -109,6 +110,17 @@ The extension stores the room in the pi session. If you resume the
 session, or give the session file to another moderator, participants
 keep the same link. A full link or a stored room includes the relay address,
 so `MEETING_MIRROR_RELAY` is necessary only to start a new room.
+
+**Moving to a different relay:** set `MEETING_MIRROR_RELAY` to the new
+relay, start pi, and run `/mirror share`. If the stored room is on a
+different relay, pi asks if you want to start a new room on the new relay.
+If you answer yes, the participant link changes. Send the new link to the meeting.
+
+**Forgetting the stored room:** run `/mirror unshare` (if the session is shared),
+then `/mirror forget`. After that, `/mirror share` follows
+`MEETING_MIRROR_RELAY` again. If the variable is not set, it uses local mode.
+The old room is forgotten only on the current branch of the session tree.
+If you go back to an earlier point in the tree, the old room returns.
 
 The relay keeps a room only while its moderator is connected. If the
 moderator disconnects, open pages show "Waiting for the moderator…".
@@ -221,7 +233,7 @@ Layout:
 
 If `MEETING_MIRROR_RELAY` is not set and the session has no stored room,
 `/mirror share` starts a server on your laptop. Use this mode for solo
-tests only.
+tests only. If the session already has a stored room, run `/mirror forget` first.
 
 - The server listens on port 7433. If that port is in use, it tries the
   next free port.

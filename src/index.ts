@@ -5,8 +5,8 @@ import { MirrorState, type Poll } from "./state.js";
 import { Hub } from "./hub.js";
 import { LocalServer, type Transport } from "./transport.js";
 import { RelayClient, RoomBusyError } from "./relay-client.js";
-import { STORED_ROOM_TYPE, findStoredRoom, type Room } from "./rooms.js";
-import { decideShare } from "./index-share.js";
+import { CLEARED_ROOM_MARKER, STORED_ROOM_TYPE, findStoredRoom, type Room } from "./rooms.js";
+import { decideForget, decideShare, relayChangePrompt } from "./index-share.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
 import { membersText, allVotedNotice } from "../page/page.js";
@@ -200,7 +200,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		let room = decision.room;
 		if (decision.needsConfirm) {
 			const answer = await ctx.ui.select(
-				confirmPrompt(room.name),
+				decision.replaces ? relayChangePrompt(decision.replaces, room) : confirmPrompt(room.name),
 				["No", "Yes, start a new room"],
 			);
 			if (answer !== "Yes, start a new room") return;
@@ -244,11 +244,17 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	};
 
 	pi.registerCommand("mirror", {
-		description: "Share status, or /mirror share [name|link] | /mirror unshare",
+		description: "Share status, or /mirror share [name|link] | /mirror unshare | /mirror forget",
 		handler: async (args, ctx) => {
 			const action = args.trim();
 			if (action === "unshare") {
 				await stopSharing(ctx);
+				return;
+			}
+			if (action === "forget") {
+				const forget = decideForget(server !== null, storedRoom(ctx));
+				if (forget.action === "forget") pi.appendEntry(STORED_ROOM_TYPE, CLEARED_ROOM_MARKER);
+				ctx.ui.notify(forget.message, forget.action === "forget" ? "info" : "warning");
 				return;
 			}
 			if (action.startsWith("share")) {
@@ -257,7 +263,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 				return;
 			}
 			if (action !== "") {
-				ctx.ui.notify("Usage: /mirror [share [name|link] | unshare]", "warning");
+				ctx.ui.notify("Usage: /mirror [share [name|link] | unshare | forget]", "warning");
 				return;
 			}
 			if (!server) {

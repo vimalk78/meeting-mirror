@@ -63,6 +63,9 @@ export function parseShareArgs(
 	);
 }
 
+/** Data for the marker entry that /mirror forget appends. */
+export const CLEARED_ROOM_MARKER = { cleared: true } as const;
+
 export function findStoredRoom(
 	branch: { type?: string; customType?: string; data?: unknown }[],
 	name?: string,
@@ -71,7 +74,13 @@ export function findStoredRoom(
 	let foundForName: Room | null = null;
 	for (const entry of branch) {
 		if (entry.type !== "custom" || entry.customType !== STORED_ROOM_TYPE) continue;
-		const data = entry.data as { name?: unknown; key?: unknown; relay?: unknown } | undefined;
+		const data = entry.data as { name?: unknown; key?: unknown; relay?: unknown; cleared?: unknown } | undefined;
+		if (data?.cleared === true) {
+			// /mirror forget: earlier rooms no longer count.
+			found = null;
+			foundForName = null;
+			continue;
+		}
 		if (
 			data &&
 			typeof data.name === "string" &&

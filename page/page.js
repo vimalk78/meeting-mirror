@@ -232,12 +232,29 @@ let username = null;
 let pollActive = false;
 let deadLink = false;
 
-// Base path and key from the URL: "/s/ols-4596" on the relay, "" locally.
+// View and base path from the URL: "/s/ols-4596/board" is the board view,
+// "/s/ols-4596" the main view; "" locally.
+export function pageView(pathname) {
+	const path = pathname.replace(/\/$/, "");
+	const m = path.match(/^(\/s\/[a-z0-9-]{3,30})?\/board$/);
+	if (m) return { view: "board", base: m[1] || "" };
+	return { view: "main", base: path };
+}
+
+/** State of the main page's board link: nothing shown, a screen this
+ * browser has seen, or a new screen. */
+export function boardLinkState(screen, seenName) {
+	if (!screen) return "none";
+	return screen.name === seenName ? "active" : "new";
+}
+
+/** localStorage key for the screen this browser's board page last showed. */
+export const boardSeenKey = (base) => `meeting-mirror-board-seen:${base}`;
+
 // Guarded so the module stays importable in Node for tests of pure helpers.
 const hasWindow = typeof location !== "undefined";
-const PATH = hasWindow ? location.pathname.replace(/\/$/, "") : "";
+const { view: VIEW, base: BASE } = hasWindow ? pageView(location.pathname) : { view: "main", base: "" };
 const KEY = hasWindow ? new URLSearchParams(location.search).get("key") ?? "" : "";
-const BASE = PATH === "" ? "" : PATH;
 const CLIENT_ID = (() => {
 	if (!hasWindow) return "";
 	let id = localStorage.getItem("meeting-mirror-client");
@@ -370,6 +387,7 @@ function handleEvent(event) {
 		// server restart): rebuild the page, never append on top of it.
 		syncIdentity(event.you);
 		restoreSnapshot(event.snapshot);
+		renderBoard(event.board ?? null);
 		const membersEl = document.getElementById("members");
 		if (membersEl) {
 			const text = membersText(event.members);
@@ -390,6 +408,8 @@ function handleEvent(event) {
 	} else if (event.type === "poll_close") {
 		clearPollCard();
 		currentPoll = null;
+	} else if (event.type === "board") {
+		renderBoard(event.screen);
 	} else if (event.type === "members") {
 		const el = document.getElementById("members");
 		if (el) {
@@ -407,6 +427,59 @@ function handleEvent(event) {
 }
 
 let currentPoll = null;
+let currentBoard = null;
+let lastRenderedBoard = null;
+
+/** Board screen rendering, per view: the board page shows the screen in
+ * its sandboxed iframe; the main page only updates the link state. Never
+ * opens windows, switches views, or scrolls by itself. */
+function renderBoard(screen) {
+	currentBoard = screen;
+	if (VIEW === "board") {
+		// the container starts hidden in page.html; showing it is this
+		// function's job, for the empty state and the frame alike
+		document.getElementById("board")?.classList.remove("hidden");
+		const empty = document.getElementById("board-empty");
+		const frame = document.getElementById("board-frame");
+		if (!screen) {
+			empty?.classList.remove("hidden");
+			frame?.classList.add("hidden");
+			frame?.setAttribute("srcdoc", "");
+			lastRenderedBoard = null;
+			return;
+		}
+		empty?.classList.add("hidden");
+		frame?.classList.remove("hidden");
+		const sig = screen.name + "\u0000" + screen.html;
+		// reload only when the screen changed, so scripts and selection state
+		// survive snapshots and reconnects
+		if (sig !== lastRenderedBoard) {
+			lastRenderedBoard = sig;
+			frame.setAttribute("srcdoc", screen.html);
+		}
+		localStorage.setItem(boardSeenKey(BASE), screen.name);
+	} else {
+		updateBoardLink();
+	}
+}
+
+/** The main page's board link: persistent, with state and a "new" marker. */
+function updateBoardLink() {
+	const link = document.getElementById("board-link");
+	if (!link) return;
+	const seen = localStorage.getItem(boardSeenKey(BASE));
+	const state = boardLinkState(currentBoard, seen);
+	link.classList.toggle("none", state === "none");
+	while (link.firstChild) link.removeChild(link.firstChild);
+	link.appendChild(document.createTextNode(state === "none" ? "Visual board (nothing shown)" : "Visual board"));
+	if (state === "new") {
+		const badge = document.createElement("span");
+		badge.className = "board-new";
+		badge.textContent = "new";
+		link.appendChild(badge);
+	}
+}
+
 const origHandle = handleEvent;
 handleEvent = function (event) {
 	if (event.type === "snapshot" || event.type === "transcript_reset") currentPoll = event.snapshot.poll;
@@ -449,7 +522,11 @@ function connectEvents() {
 let reconnectAttempt = 0;
 
 function keyboardShortcuts() {
+	if (VIEW === "board") return; // poll keys belong to the main view
 	document.addEventListener("keydown", (e) => {
+		// live check: the board view hides the transcript, so poll keys must
+		// not vote even if this listener outlives a view change
+		if (document.body.classList.contains("board-view")) return;
 		if (!pollActive) return;
 		if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
 		const keys = "ABCDEFGHIJ";
@@ -466,8 +543,10 @@ function keyboardShortcuts() {
 function syncIdentity(you) {
 	username = you;
 	updateIdentityChip();
-	if (you) {
-		document.getElementById("identify-overlay").classList.add("hidden");
+	if (you || VIEW === "board") {
+		// joined already, or the board view: the board never asks for a name
+		// in step 1 (nothing to send); voting and joining stay on the main page
+		document.getElementById("identify-overlay")?.classList.add("hidden");
 	} else {
 		showIdentifyOverlay(localStorage.getItem("meeting-mirror-username"));
 	}
@@ -521,6 +600,20 @@ function initJumpLatest() {
 }
 
 if (typeof document !== "undefined") {
+	if (VIEW === "board") {
+		document.body.classList.add("board-view");
+	} else {
+		const link = document.getElementById("board-link");
+		if (link) {
+			link.setAttribute("href", `${BASE}/board?key=${encodeURIComponent(KEY)}`);
+			updateBoardLink();
+			// the board page in another tab of this browser marks the screen
+			// seen; a storage event is how we learn about it
+			window.addEventListener("storage", (e) => {
+				if (e.key === boardSeenKey(BASE)) updateBoardLink();
+			});
+		}
+	}
 	document.getElementById("identity-chip").addEventListener("click", () => {
 		localStorage.removeItem("meeting-mirror-username");
 		username = null;

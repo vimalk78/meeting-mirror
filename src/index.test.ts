@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { nthLastAssistant, isConversationMessage } from "./index-helpers.js";
 import { escapeHtml, renderMarkdown, renderTally, formatMessage } from "../page/page.js";
+import { pageView, boardLinkState } from "../page/page.js";
 import { resyncFromBranch } from "./index-helpers.js";
 import { formatPollResult } from "./index.js";
 import type { MirrorMessage } from "./state.js";
@@ -11,6 +12,26 @@ const msgs: MirrorMessage[] = [
 	{ role: "user", text: "second prompt", timestamp: 3 },
 	{ role: "assistant", text: "second reply", timestamp: 4 },
 ];
+
+describe("pageView", () => {
+	it("main vs board, local and relay paths", () => {
+		expect(pageView("/")).toEqual({ view: "main", base: "" });
+		expect(pageView("/board")).toEqual({ view: "board", base: "" });
+		expect(pageView("/s/ols-4596")).toEqual({ view: "main", base: "/s/ols-4596" });
+		expect(pageView("/s/ols-4596/board")).toEqual({ view: "board", base: "/s/ols-4596" });
+		expect(pageView("/s/board")).toEqual({ view: "main", base: "/s/board" });
+		expect(pageView("/s/board/board/")).toEqual({ view: "board", base: "/s/board" });
+	});
+});
+
+describe("boardLinkState", () => {
+	it("none / active / new from screen and seen name", () => {
+		expect(boardLinkState(null, "a.html")).toBe("none");
+		expect(boardLinkState({ name: "a.html" }, "a.html")).toBe("active");
+		expect(boardLinkState({ name: "b.html" }, "a.html")).toBe("new");
+		expect(boardLinkState({ name: "a.html" }, null)).toBe("new");
+	});
+});
 
 describe("nthLastAssistant", () => {
 	it("n=1 returns the last assistant message", () => {

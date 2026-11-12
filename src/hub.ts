@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MirrorState, MirrorEvent, MirrorSnapshot } from "./state.js";
+import type { BoardScreen } from "./board.js";
 
 export type Member = { name: string; voted: boolean };
 
@@ -14,11 +15,13 @@ export type SnapshotEvent = {
 	you: string | null;
 	snapshot: MirrorSnapshot;
 	members: MemberList;
+	board: BoardScreen | null;
 };
 
 export type HubEvent =
 	| Exclude<MirrorEvent, { type: "vote_cast" }>
-	| ({ type: "members" } & MemberList);
+	| ({ type: "members" } & MemberList)
+	| { type: "board"; screen: BoardScreen | null };
 
 export type Reply = { status: number; body: unknown };
 
@@ -31,6 +34,11 @@ export type Reply = { status: number; body: unknown };
 export class Hub {
 	/** Per-run id: changes when the moderator's pi restarts. */
 	readonly sessionId = randomUUID();
+
+	/** The current visual-board screen, or null. */
+	get board(): BoardScreen | null {
+		return this.boardScreen;
+	}
 
 	/** clientId → name, in join order. */
 	private bound = new Map<string, string>();
@@ -70,6 +78,7 @@ export class Hub {
 			you: this.bound.get(clientId) ?? null,
 			snapshot: this.state.getSnapshot(),
 			members: this.memberList(),
+			board: this.boardScreen,
 		};
 		if (!hadPresence && this.bound.has(clientId)) this.emitMembers();
 		return { connId, snapshot };
@@ -82,6 +91,12 @@ export class Hub {
 		if (clientId && this.bound.has(clientId) && !this.present(clientId)) {
 			this.emitMembers();
 		}
+	}
+
+	/** Set the current visual-board screen and tell every connection. */
+	setBoard(screen: BoardScreen | null): void {
+		this.boardScreen = screen;
+		this.emit({ type: "board", screen });
 	}
 
 	/** POST /identify body handling. */
@@ -157,6 +172,7 @@ export class Hub {
 	}
 
 	private subscribers = new Set<(event: HubEvent) => void>();
+	private boardScreen: BoardScreen | null = null;
 
 	private present(clientId: string): boolean {
 		for (const bound of this.connections.values()) {

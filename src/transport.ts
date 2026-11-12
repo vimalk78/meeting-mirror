@@ -98,7 +98,7 @@ export class LocalServer implements Transport {
 
 	private handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = new URL(req.url ?? "/", "http://local");
-		if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+		if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/board")) {
 			if (this.isAuthorized(req, url)) {
 				this.serveFile(res, "page.html");
 			} else {

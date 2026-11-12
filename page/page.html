@@ -16,10 +16,17 @@
 		<button id="username-button">Join</button>
 	</div>
 </div>
-<div id="identity-chip" class="identity-chip hidden"></div>
+<div id="top-right" class="top-right">
+	<div id="identity-chip" class="identity-chip hidden"></div>
+	<a id="board-link" class="board-link none" target="_blank" rel="noopener">Visual board (nothing shown)</a>
+</div>
 <main id="transcript" class="transcript"><div id="poll-card" class="poll-card" aria-live="polite"></div></main>
 <div id="waiting" class="banner hidden">Waiting for the moderator…</div>
 <div id="members" class="members hidden"></div>
+<div id="board" class="board hidden">
+	<p id="board-empty" class="board-empty">Nothing on the board yet</p>
+	<iframe id="board-frame" class="board-frame hidden" sandbox="allow-scripts" title="Visual board"></iframe>
+</div>
 <button id="jump-latest" class="jump-latest hidden">↓ Jump to latest</button>
 <script type="module" src="/page.js"></script>
 </body>

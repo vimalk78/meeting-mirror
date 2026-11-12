@@ -165,6 +165,31 @@ the correct link.
 - If the relay route is reachable from the internet, the key is the only
   protection. Send room links to the meeting, not to a broad channel.
 
+## Visual board
+
+When the superpowers brainstorming skill runs its visual companion,
+participants can follow it too. The mirror page always shows a
+**Visual board** link in the top right. It opens the board page in a new
+tab, which shows the companion's current screen — mockups, diagrams and
+option cards — and follows along as the moderator presents. The board is
+read-only in this step: participants can click option cards to highlight
+them on their own screen, but their picks are not sent anywhere.
+
+Requirements:
+
+- Start the companion with `--project-dir` set to the directory pi runs
+  in (this is what the brainstorming skill does by default). Sessions
+  started without `--project-dir` are not found.
+- The board page URL is `<mirror page URL>/board` — for example
+  `https://<relay-host>/s/<room>/board?key=<key>`. You can share it
+  directly.
+
+Screens are shown in a sandboxed frame, so a mockup's scripts cannot read
+the mirror page or its data. Note that a screen may load images, fonts or
+scripts from other sites (for example a CDN); those sites then see
+participants' IP addresses, just as they would in the moderator's
+companion. Screens larger than 1 MB are replaced by a notice.
+
 ## Known limitation: polls are in memory only
 
 Poll state (question, options, votes) lives in the memory of the

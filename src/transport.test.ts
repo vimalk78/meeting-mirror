@@ -220,4 +220,12 @@ describe("LocalServer over Hub", () => {
 		await s.stop();
 		await expect(fetch(`${base}/`)).rejects.toThrow();
 	});
+
+	it("serves the board page with the key, rejects without", async () => {
+		const { base, key } = await start();
+		const ok = await fetch(`${base}/board?key=${key}`);
+		expect(ok.status).toBe(200);
+		expect(await ok.text()).toContain("/page.js");
+		expect((await fetch(`${base}/board`)).status).toBe(403);
+	});
 });

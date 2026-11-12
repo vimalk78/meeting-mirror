@@ -109,6 +109,15 @@ describe("relay HTTP", () => {
 		expect((await fetch(`${base}/s/BAD_NAME`)).status).toBe(404);
 		expect((await fetch(`${base}/page.css`)).status).toBe(200);
 	});
+
+	it("serves the board page; unknown sub-paths 404", async () => {
+		const { base } = await startRelay();
+		const res = await fetch(`${base}/s/ols-4596/board`);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toContain("/page.js");
+		expect((await fetch(`${base}/s/board/board`)).status).toBe(200);
+		expect((await fetch(`${base}/s/ols-4596/boardx`)).status).toBe(404);
+	});
 });
 
 describe("relay presenter protocol", () => {

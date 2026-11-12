@@ -320,7 +320,7 @@ export function createRelay(opts: {
 			servePageFile(res, url.pathname.slice(1));
 			return;
 		}
-		const roomMatch = url.pathname.match(/^\/s\/([a-z0-9-]{3,30})(\/(events|identify|vote))?\/?$/);
+		const roomMatch = url.pathname.match(/^\/s\/([a-z0-9-]{3,30})(\/(events|identify|vote|board))?\/?$/);
 		if (!roomMatch) {
 			res.writeHead(404, { "content-type": "text/plain" });
 			res.end("not found");
@@ -330,7 +330,7 @@ export function createRelay(opts: {
 		const action = roomMatch[3];
 		const key = url.searchParams.get("key") ?? "";
 		const client = url.searchParams.get("client") ?? "";
-		if (req.method === "GET" && !action) {
+		if (req.method === "GET" && (!action || action === "board")) {
 			servePageFile(res, "page.html");
 			return;
 		}

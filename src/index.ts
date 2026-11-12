@@ -9,6 +9,7 @@ import { CLEARED_ROOM_MARKER, STORED_ROOM_TYPE, findStoredRoom, type Room } from
 import { decideForget, decideShare, relayChangePrompt } from "./index-share.js";
 import { parsePollArgs, extractPoll, ExtractionError } from "./extract.js";
 import { nthLastAssistant, resyncFromBranch, type BranchEntry } from "./index-helpers.js";
+import { BoardWatcher } from "./board-watcher.js";
 import { membersText, allVotedNotice } from "../page/page.js";
 
 /** Notice when /poll is run while another poll is open or revealed. */
@@ -74,6 +75,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	let state: MirrorState | null = null;
 	let hub: Hub | null = null;
 	let server: Transport | null = null;
+	/** Watches the companion for the visual board while shared. */
+	let board: BoardWatcher | null = null;
 	/** Notifies from places without a command ctx (hub event subscription). */
 	let uiNotify: ((msg: string, level: "info" | "warning") => void) | null = null;
 	/** One all-voted notice per open poll. */
@@ -156,6 +159,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async () => {
 		await server?.stop();
 		server = null;
+		board?.stop();
+		board = null;
 		state = null;
 	});
 
@@ -167,6 +172,7 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 	const startSharing = async (args: string, ctx: {
 		ui: { notify: (msg: string, level: "info" | "warning") => void; select: (title: string, options: string[]) => Promise<string | undefined> };
 		sessionManager: { getBranch: () => BranchEntry[] };
+		cwd: string;
 	}): Promise<void> => {
 		if (server) {
 			ctx.ui.notify("Meeting Mirror is already shared.", "info");
@@ -189,6 +195,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 				const port = local.url.split(":").pop();
 				const urls = allAddresses().map((a) => `http://${a}:${port}/?key=${local.key}`);
 				ctx.ui.notify(`Meeting Mirror page: ${local.pageUrl}${urls.length ? ` (teammates: ${urls.join(", ")})` : ""}`, "info");
+				board = new BoardWatcher(hub!, ctx.cwd);
+				board.start();
 			} catch (err) {
 				server = null;
 				ctx.ui.notify(`Meeting Mirror failed to start: ${err instanceof Error ? err.message : err}`, "warning");
@@ -208,6 +216,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		const client = new RelayClient(hub!, room, {
 			onLost: (reason) => {
 				server = null;
+				board?.stop();
+				board = null;
 				ctx.ui.notify(
 					reason === "replaced"
 						? `Meeting Mirror: another moderator took over room ${room.name}.`
@@ -227,6 +237,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 			return;
 		}
 		server = client;
+		board = new BoardWatcher(hub!, ctx.cwd);
+		board.start();
 		ctx.ui.notify(`Meeting Mirror room: ${client.pageUrl}`, "info");
 		if (decision.isNew) {
 			pi.appendEntry(STORED_ROOM_TYPE, room);
@@ -240,6 +252,8 @@ export default function meetingMirror(pi: ExtensionAPI): void {
 		}
 		await server.stop();
 		server = null;
+		board?.stop();
+		board = null;
 		ctx.ui.notify("Meeting Mirror: session is now private. Connected pages will disconnect.", "info");
 	};
 

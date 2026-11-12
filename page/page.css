@@ -221,9 +221,6 @@ body {
 
 /* Identity chip — who you are on this page, click to switch */
 .identity-chip {
-	position: fixed;
-	top: 12px;
-	right: 12px;
 	font-family: -apple-system, "Segoe UI", sans-serif;
 	font-size: 12px;
 	color: #555;
@@ -231,9 +228,9 @@ body {
 	border: 1px solid #ccc;
 	border-radius: 14px;
 	padding: 4px 12px;
-	z-index: 6;
 	cursor: pointer;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+	white-space: nowrap;
 }
 .identity-chip:hover { border-color: var(--accent); }
 .identity-chip.hidden { display: none; }
@@ -270,3 +267,69 @@ body {
 	text-overflow: ellipsis;
 }
 .members.hidden { display: none; }
+
+/* Visual board */
+/* One fixed container owns the top-right corner: the chip grows with the
+ * name and the board link must never be covered by (or cover) it. */
+.top-right {
+	position: fixed;
+	top: 12px;
+	right: 12px;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	z-index: 6;
+}
+.board-link {
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	font-size: 12px;
+	color: #555;
+	background: #fff;
+	border: 1px solid #ccc;
+	border-radius: 14px;
+	padding: 4px 12px;
+	text-decoration: none;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+	white-space: nowrap;
+}
+.board-link:hover { border-color: var(--accent); }
+.board-link.none { color: var(--muted); }
+.board-new {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 0 6px;
+	border-radius: 8px;
+	background: var(--accent);
+	color: #fff;
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+/* Board view: the screen is the page; everything else hides. */
+body.board-view .transcript,
+body.board-view #members,
+body.board-view #jump-latest,
+body.board-view #board-link,
+body.board-view .identity-chip { display: none; }
+body.board-view { overflow: hidden; }
+.board-frame {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	border: 0;
+	background: #fff;
+}
+.board-empty {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0;
+	font-family: -apple-system, "Segoe UI", sans-serif;
+	color: var(--muted);
+}
+.board.hidden { display: none; }
+.board-frame.hidden { display: none; }
+.board-empty.hidden { display: none; }

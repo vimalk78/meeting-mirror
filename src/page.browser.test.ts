@@ -7,6 +7,9 @@ const realPageBody = (): string =>
 
 let stream: { onmessage?: (event: { data: string }) => void; src: string };
 const poll = { question: "Choose", options: [{ key: "A", label: "One" }, { key: "B", label: "Two" }] };
+const emptySnapshot = { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null };
+const snap = (over: Record<string, unknown> = {}) =>
+	({ type: "snapshot", sessionId: "s", you: "Ann", snapshot: { ...emptySnapshot }, members: { members: [], voteCount: null }, ...over } as never);
 
 function send(event: unknown) {
 	stream.onmessage?.({ data: JSON.stringify(event) });
@@ -26,11 +29,18 @@ async function reset(path: string) {
 	localStorage.clear();
 	document.body.innerHTML = `
 		<div id="identify-overlay" class="hidden"><div id="identify-error"></div><input id="username-input"><button id="username-button">Join</button></div>
-		<div id="identity-chip" class="hidden"></div>
+		<div id="top-right" class="top-right">
+			<div id="identity-chip" class="hidden"></div>
+			<a id="board-link" class="board-link none" target="_blank" rel="noopener">Visual board (nothing shown)</a>
+		</div>
 		<main id="transcript"><div id="poll-card"></div></main>
 		<div id="waiting" class="hidden">Waiting for the moderator…</div>
 		<div id="members" class="hidden"></div>
-		<button id="jump-latest" class="hidden"></button>`;
+		<button id="jump-latest" class="hidden"></button>
+		<div id="board" class="board hidden">
+			<p id="board-empty" class="board-empty">Nothing on the board yet</p>
+			<iframe id="board-frame" class="board-frame hidden" sandbox="allow-scripts" title="Visual board"></iframe>
+		</div>`;
 	window.history.replaceState({}, "", path);
 }
 const fetchCalls: { url: string; init?: RequestInit }[] = [];
@@ -261,7 +271,81 @@ describe("EventSource failure (code review: no recovery after relay restart)", (
 		expect(sources.length).toBeGreaterThan(1);
 
 		// a snapshot on the new stream hides the banner again
-		send({ type: "snapshot", you: null, snapshot: { messages: [], poll: null, revealed: null, voteCount: null, pollAnchor: null }, members: { members: [], voteCount: null } });
+		send(snap());
 		expect(document.getElementById("waiting")!.classList.contains("hidden")).toBe(true);
+	});
+});
+
+describe("visual board visibility (computed styles)", () => {
+	const screen = { name: "a.html", html: "<p>A</p>" };
+
+	it("the empty message is really hidden when a screen is up, and the frame really hidden when it is not", async () => {
+		// page.css decides what 'hidden' means; load the real sheet so a
+		// toggled class without a CSS rule fails here, not in a meeting
+		const style = document.createElement("style");
+		style.textContent = readFileSync("page/page.css", "utf8");
+		document.head.appendChild(style);
+		try {
+			await reset("/s/ols-4596/board?key=K");
+			document.head.appendChild(style);
+			await boot("/s/ols-4596/board?key=K");
+			send(snap({ you: null, board: null }));
+			expect(getComputedStyle(document.getElementById("board-empty")!).display).not.toBe("none");
+			expect(getComputedStyle(document.getElementById("board-frame")!).display).toBe("none");
+			send({ type: "board", screen });
+			expect(getComputedStyle(document.getElementById("board-empty")!).display).toBe("none");
+			expect(getComputedStyle(document.getElementById("board-frame")!).display).not.toBe("none");
+			expect(getComputedStyle(document.getElementById("board")!).display).not.toBe("none");
+		} finally {
+			style.remove();
+		}
+	});
+});
+
+describe("visual board", () => {
+	const screen = { name: "a.html", html: "<p>A</p>" };
+
+	it("main view: link always present, href to board, text follows state", async () => {
+		await reset("/s/ols-4596?key=K");
+		await boot("/s/ols-4596?key=K");
+		const link = document.getElementById("board-link") as HTMLAnchorElement;
+		expect(link.getAttribute("href")).toBe("/s/ols-4596/board?key=K");
+		send(snap({ board: null }));
+		expect(link.textContent).toBe("Visual board (nothing shown)");
+		send({ type: "board", screen });
+		expect(link.textContent).toContain("Visual board");
+		expect(link.querySelector(".board-new")?.textContent).toBe("new");
+		localStorage.setItem("meeting-mirror-board-seen:/s/ols-4596", "a.html");
+		window.dispatchEvent(new StorageEvent("storage", { key: "meeting-mirror-board-seen:/s/ols-4596" }));
+		expect(link.querySelector(".board-new")).toBeNull();
+	});
+
+	it("board view: empty text, then sandboxed srcdoc, marks seen; same screen does not reload", async () => {
+		await reset("/s/ols-4596/board?key=K");
+		await boot("/s/ols-4596/board?key=K");
+		expect(stream.src.startsWith("/s/ols-4596/events?key=K&client=")).toBe(true);
+		expect(document.body.classList.contains("board-view")).toBe(true);
+		send(snap({ you: null, board: null }));
+		// the container itself must be visible, not just its children
+		expect(document.getElementById("board")!.classList.contains("hidden")).toBe(false);
+		expect(document.getElementById("board-empty")!.classList.contains("hidden")).toBe(false);
+		expect(document.getElementById("identify-overlay")!.classList.contains("hidden")).toBe(true);
+		send({ type: "board", screen });
+		const frame = document.getElementById("board-frame") as HTMLIFrameElement;
+		expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+		expect(frame.getAttribute("srcdoc")).toBe("<p>A</p>");
+		expect(localStorage.getItem("meeting-mirror-board-seen:/s/ols-4596")).toBe("a.html");
+		const setter = vi.spyOn(frame, "setAttribute");
+		send(snap({ you: null, board: screen }));
+		expect(setter).not.toHaveBeenCalledWith("srcdoc", expect.anything());
+		setter.mockRestore();
+	});
+
+	it("board view: poll keys do not vote", async () => {
+		await reset("/board?key=K");
+		await boot("/board?key=K");
+		send(snap({ snapshot: { ...emptySnapshot, poll, voteCount: 0, pollAnchor: 0 }, board: null }));
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "A" }));
+		expect(fetchCalls.some((c) => c.url.includes("/vote"))).toBe(false);
 	});
 });

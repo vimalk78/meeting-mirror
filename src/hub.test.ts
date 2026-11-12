@@ -191,6 +191,21 @@ describe("Hub events", () => {
 	});
 });
 
+describe("Hub board", () => {
+	it("board: null in the first snapshot, then set and emitted, and in later snapshots", () => {
+		const hub = new Hub(new MirrorState());
+		expect(hub.open("c1").snapshot.board).toBeNull();
+		const seen: unknown[] = [];
+		hub.subscribe((e) => seen.push(e));
+		const screen = { name: "a.html", html: "<p>a</p>" };
+		hub.setBoard(screen);
+		expect(seen).toContainEqual({ type: "board", screen });
+		expect(hub.open("c2").snapshot.board).toEqual(screen);
+		hub.setBoard(null);
+		expect(seen).toContainEqual({ type: "board", screen: null });
+	});
+});
+
 describe("Hub sessionId", () => {
 	it("is a non-empty string and stable for the instance", () => {
 		const h = new Hub(state());
